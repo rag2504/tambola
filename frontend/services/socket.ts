@@ -4,9 +4,11 @@
 import { io, Socket } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const SOCKET_URL = __DEV__
-  ? 'http://localhost:8001'  // Development
-  : 'https://your-production-api.com';  // Production
+const SOCKET_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+
+if (!SOCKET_URL) {
+  console.error('EXPO_PUBLIC_BACKEND_URL is missing!');
+}
 
 class SocketService {
   private socket: Socket | null = null;
@@ -59,7 +61,7 @@ class SocketService {
 
     this.socket.on('connect', () => {
       console.log('Socket connected:', this.socket?.id);
-      
+
       // Authenticate
       if (this.userId) {
         this.socket?.emit('authenticate', { user_id: this.userId });

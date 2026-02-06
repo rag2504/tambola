@@ -60,7 +60,10 @@ export default function LobbyScreen() {
     loadRooms();
   };
 
+  const [joiningRoomId, setJoiningRoomId] = useState<string | null>(null);
+
   const handleJoinRoom = async (room: Room) => {
+    if (joiningRoomId) return; // Prevent double click
     if (room.current_players >= room.max_players) {
       Alert.alert('Room Full', 'This room is full');
       return;
@@ -74,7 +77,8 @@ export default function LobbyScreen() {
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Join',
-            onPress: async (password) => {
+            onPress: async (password?: string) => {
+              setJoiningRoomId(room.id);
               try {
                 await roomAPI.joinRoom(room.id, password);
                 router.push({
@@ -82,7 +86,9 @@ export default function LobbyScreen() {
                   params: { id: room.id },
                 });
               } catch (error: any) {
-                Alert.alert('Error', error.response?.data?.detail || 'Failed to join room');
+                Alert.alert('Error', error.response?.data?.detail || error.message || 'Failed to join room');
+              } finally {
+                setJoiningRoomId(null);
               }
             },
           },
@@ -90,6 +96,7 @@ export default function LobbyScreen() {
         'secure-text'
       );
     } else {
+      setJoiningRoomId(room.id);
       try {
         await roomAPI.joinRoom(room.id);
         router.push({
@@ -97,16 +104,19 @@ export default function LobbyScreen() {
           params: { id: room.id },
         });
       } catch (error: any) {
-        Alert.alert('Error', error.response?.data?.detail || 'Failed to join room');
+        Alert.alert('Error', error.response?.data?.detail || error.message || 'Failed to join room');
+      } finally {
+        setJoiningRoomId(null);
       }
     }
   };
 
   const renderRoom = ({ item }: { item: Room }) => (
     <TouchableOpacity
-      style={styles.roomCard}
+      style={[styles.roomCard, joiningRoomId === item.id && { opacity: 0.7 }]}
       onPress={() => handleJoinRoom(item)}
       activeOpacity={0.7}
+      disabled={!!joiningRoomId}
     >
       <View style={styles.roomHeader}>
         <View style={styles.roomInfo}>
@@ -156,7 +166,11 @@ export default function LobbyScreen() {
             {item.status === 'waiting' ? 'WAITING' : 'IN PROGRESS'}
           </Text>
         </View>
-        <MaterialCommunityIcons name="chevron-right" size={24} color="#FFD700" />
+        {joiningRoomId === item.id ? (
+          <ActivityIndicator size="small" color="#FFD700" />
+        ) : (
+          <MaterialCommunityIcons name="chevron-right" size={24} color="#FFD700" />
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -186,7 +200,7 @@ export default function LobbyScreen() {
           <View style={styles.headerRight}>
             <TouchableOpacity
               style={styles.walletButton}
-              onPress={() => router.push('/wallet')}
+              onPress={() => router.push('/(tabs)/wallet' as any)}
             >
               <MaterialCommunityIcons name="wallet" size={24} color="#FFD700" />
               <Text style={styles.walletText}>₹{user?.wallet_balance || 0}</Text>

@@ -35,7 +35,7 @@ const DEFAULT_PRIZES: Prize[] = [
 
 export default function CreateRoomScreen() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Room settings
   const [roomName, setRoomName] = useState('');
@@ -60,12 +60,14 @@ export default function CreateRoomScreen() {
   };
 
   const validateInputs = () => {
-    if (!roomName.trim()) {
+    const safeRoomName = (roomName || "").trim();
+
+    if (!safeRoomName) {
       Alert.alert('Error', 'Please enter a room name');
       return false;
     }
 
-    if (roomName.length < 3) {
+    if (safeRoomName.length < 3) {
       Alert.alert('Error', 'Room name must be at least 3 characters');
       return false;
     }
@@ -88,7 +90,8 @@ export default function CreateRoomScreen() {
       return false;
     }
 
-    if (roomType === 'private' && !password.trim()) {
+    const safePassword = (password || "").trim();
+    if (roomType === 'private' && !safePassword) {
       Alert.alert('Error', 'Please set a password for private room');
       return false;
     }
@@ -105,10 +108,13 @@ export default function CreateRoomScreen() {
   const handleCreateRoom = async () => {
     if (!validateInputs()) return;
 
-    setLoading(true);
+    setIsLoading(true);
     try {
+      const safeRoomName = (roomName || "").trim();
+      const safePassword = (password || "").trim();
+
       const roomData = {
-        name: roomName.trim(),
+        name: safeRoomName,
         room_type: roomType,
         ticket_price: parseInt(ticketPrice),
         max_players: parseInt(maxPlayers),
@@ -121,11 +127,11 @@ export default function CreateRoomScreen() {
             amount: parseInt(p.amount),
             enabled: true,
           })),
-        password: roomType === 'private' ? password : undefined,
+        password: roomType === 'private' ? safePassword : undefined,
       };
 
       const room = await roomAPI.createRoom(roomData);
-      const roomName = room?.name ?? 'Room';
+      const createdRoomName = room?.name ?? 'Room';
 
       // Navigate first so we always get to lobby even if Alert callback fails (e.g. on web)
       router.replace('/lobby');
@@ -133,14 +139,14 @@ export default function CreateRoomScreen() {
       // Then show success message (non-blocking)
       Alert.alert(
         'Room Created!',
-        `"${roomName}" has been created. You can open it from the lobby.`,
+        `"${createdRoomName}" has been created. You can open it from the lobby.`,
         [{ text: 'OK' }]
       );
     } catch (error: any) {
       console.error('Error creating room:', error);
-      Alert.alert('Error', error.response?.data?.detail || 'Failed to create room');
+      Alert.alert('Error', error.response?.data?.detail || error.message || 'Failed to create room');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -335,9 +341,9 @@ export default function CreateRoomScreen() {
           <TouchableOpacity
             style={styles.createButton}
             onPress={handleCreateRoom}
-            disabled={loading}
+            disabled={isLoading}
           >
-            {loading ? (
+            {isLoading ? (
               <ActivityIndicator color="#1a5f1a" />
             ) : (
               <>

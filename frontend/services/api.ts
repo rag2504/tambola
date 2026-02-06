@@ -5,43 +5,69 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // API Configuration
-const API_URL = __DEV__ 
-  ? 'http://localhost:8001/api'  // Development
-  : 'https://your-production-api.com/api';  // Production
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+if (!BACKEND_URL) {
+  console.error('EXPO_PUBLIC_BACKEND_URL is missing!');
+}
+const API_URL = `${BACKEND_URL}/api`;
 
 // Fetch wrapper with auth and error handling
+// Fetch wrapper with resilient networking (timeouts, safe parsing)
 const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
   const token = await AsyncStorage.getItem('auth_token');
-  
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
   };
-  
+
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  // 1. Timeout Logic (30s for Render cold start)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-  // Handle 401 - Token expired
-  if (response.status === 401) {
-    await AsyncStorage.removeItem('auth_token');
-    await AsyncStorage.removeItem('user_data');
-    throw new Error('Unauthorized');
+  try {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      ...options,
+      headers,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    // 2. Safe Parsing & Logging
+    const text = await response.text();
+    console.log("API RAW RESPONSE:", text);
+
+    let data = null;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      // If it's not JSON, treat raw text as message or empty object
+      data = { message: text || "Invalid JSON response" };
+    }
+
+    // 3. Error Handling
+    if (!response.ok) {
+      // Handle 401 - Token expired
+      if (response.status === 401) {
+        await AsyncStorage.removeItem('auth_token');
+        await AsyncStorage.removeItem('user_data');
+        throw new Error('Unauthorized');
+      }
+      throw new Error(data?.message || `Server Error (${response.status})`);
+    }
+
+    return data;
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      throw new Error('Network timeout. Server took too long to respond.');
+    }
+    throw error;
   }
-
-  // Parse response
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.message || 'Request failed');
-  }
-
-  return data;
 };
 
 // ============= AUTH API =============

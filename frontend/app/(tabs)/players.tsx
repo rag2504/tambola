@@ -130,7 +130,7 @@ export default function PlayersScreen() {
 
     // Start fresh every time a new game is started
     await resetGame();
-    await AsyncStorage.multiRemove(['game_state', 'generated_tickets', 'admin_selected_ticket']);
+    await AsyncStorage.multiRemove(['game_state', 'generated_tickets', 'admin_selected_ticket', 'claims']);
 
     // Save game data to AsyncStorage
     const gameData = {
@@ -139,7 +139,8 @@ export default function PlayersScreen() {
     };
     await AsyncStorage.setItem('current_game', JSON.stringify(gameData));
     
-    router.push('/game');
+    // Navigate to prize configuration first
+    router.push('/prize-config');
   };
 
   const viewPlayerTickets = (player: Player) => {

@@ -7,6 +7,9 @@ import {
   Alert,
   ScrollView,
   Dimensions,
+  Linking,
+  Share,
+  Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -149,6 +152,62 @@ export default function GameScreen() {
     });
   };
 
+  const shareBoard = async () => {
+    const called = gameState.calledNumbers.sort((a, b) => a - b);
+    let message = '🎲 TAMBOLA GAME BOARD 🎲\n\n';
+    message += `Called Numbers (${called.length}/90):\n`;
+    
+    // Group numbers by tens
+    for (let i = 0; i < 9; i++) {
+      const start = i * 10 + 1;
+      const end = (i + 1) * 10;
+      const range = called.filter(n => n >= start && n <= end);
+      if (range.length > 0) {
+        message += `${start}-${end}: ${range.join(', ')}\n`;
+      }
+    }
+    
+    message += `\nCurrent Number: ${gameState.currentNumber || 'Not started'}\n`;
+    message += `Remaining: ${90 - called.length}`;
+
+    try {
+      await Share.share({ message });
+    } catch (error) {
+      console.error('Error sharing board:', error);
+      Alert.alert('Error', 'Failed to share board');
+    }
+  };
+
+  const sharePrizePool = async () => {
+    try {
+      const prizesData = await AsyncStorage.getItem('prize_config');
+      if (!prizesData) {
+        Alert.alert('No Prizes', 'Prize pool not configured');
+        return;
+      }
+
+      const prizes = JSON.parse(prizesData);
+      const enabled = prizes.filter((p: any) => p.enabled);
+      
+      let message = '🏆 TAMBOLA PRIZE POOL 🏆\n\n';
+      enabled.forEach((prize: any) => {
+        message += `${prize.name}: ₹${prize.amount}\n`;
+      });
+      
+      const total = enabled.reduce((sum: number, p: any) => sum + parseInt(p.amount), 0);
+      message += `\n💰 Total Prize Pool: ₹${total.toLocaleString()}`;
+
+      await Share.share({ message });
+    } catch (error) {
+      console.error('Error sharing prizes:', error);
+      Alert.alert('Error', 'Failed to share prizes');
+    }
+  };
+
+  const viewClaims = () => {
+    router.push('/claims');
+  };
+
   const renderNumberGrid = () => {
     const numbers = Array.from({ length: 90 }, (_, i) => i + 1);
     const rows = [];
@@ -203,6 +262,9 @@ export default function GameScreen() {
           </TouchableOpacity>
           <Text style={styles.headerTitle}>TAMBOLA GAME</Text>
           <View style={styles.headerRight}>
+            <TouchableOpacity onPress={viewClaims} style={styles.headerButton}>
+              <MaterialCommunityIcons name="trophy" size={22} color="#FFD700" />
+            </TouchableOpacity>
             <Text style={styles.calledCount}>{gameState.calledNumbers.length}/90</Text>
             <TouchableOpacity onPress={handleEndGame} style={styles.endGameButton}>
               <MaterialCommunityIcons name="flag-checkered" size={22} color="#FFD700" />
@@ -250,6 +312,18 @@ export default function GameScreen() {
           <View style={styles.autoHint}>
             <MaterialCommunityIcons name="volume-high" size={18} color="#FFD700" />
             <Text style={styles.autoHintText}>Auto mode announces numbers every {AUTO_SPEED_SECONDS} seconds</Text>
+          </View>
+
+          {/* Share Options */}
+          <View style={styles.shareSection}>
+            <TouchableOpacity style={styles.shareButton} onPress={shareBoard}>
+              <MaterialCommunityIcons name="share-variant" size={20} color="#FFF" />
+              <Text style={styles.shareButtonText}>Share Board</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.shareButton} onPress={sharePrizePool}>
+              <MaterialCommunityIcons name="trophy-variant" size={20} color="#FFF" />
+              <Text style={styles.shareButtonText}>Share Prizes</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Number Grid */}
@@ -318,11 +392,12 @@ const styles = StyleSheet.create({
     color: '#FFD700',
   },
   headerRight: {
-    width: 90,
-    alignItems: 'flex-end',
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    alignItems: 'center',
     gap: 10,
+  },
+  headerButton: {
+    padding: 6,
   },
   calledCount: {
     fontSize: 16,
@@ -408,6 +483,28 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     color: 'rgba(255, 255, 255, 0.85)',
+  },
+  shareSection: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  shareButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 215, 0, 0.3)',
+    borderWidth: 1,
+    borderColor: '#FFD700',
+    gap: 8,
+  },
+  shareButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFF',
   },
   section: {
     marginBottom: 24,

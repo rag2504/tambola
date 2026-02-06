@@ -1,105 +1,111 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Alert } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const [logoPressStart, setLogoPressStart] = useState<number | null>(null);
-  const [versionTapCount, setVersionTapCount] = useState(0);
-  const versionTapTimeout = useRef<NodeJS.Timeout | null>(null);
+  const { isAuthenticated, isLoading } = useAuth();
+  const [showOptions, setShowOptions] = useState(false);
 
-  const handleStart = () => {
-    router.push('/(tabs)/players');
-  };
-
-  const handleLogoLongPress = () => {
-    const startTime = Date.now();
-    setLogoPressStart(startTime);
-    
-    setTimeout(() => {
-      if (Date.now() - startTime >= 5000) {
-        // 5 seconds long press detected
-        router.push('/admin');
-        setLogoPressStart(null);
+  useEffect(() => {
+    if (!isLoading) {
+      if (isAuthenticated) {
+        // User is logged in, show options
+        setShowOptions(true);
+      } else {
+        // Not logged in, wait for user action
+        setShowOptions(true);
       }
-    }, 5000);
-  };
-
-  const handleLogoPressOut = () => {
-    setLogoPressStart(null);
-  };
-
-  const handleVersionTap = () => {
-    const newCount = versionTapCount + 1;
-    setVersionTapCount(newCount);
-
-    if (newCount >= 7) {
-      // 7 taps detected
-      router.push('/admin');
-      setVersionTapCount(0);
-      if (versionTapTimeout.current) {
-        clearTimeout(versionTapTimeout.current);
-      }
-    } else {
-      // Reset counter after 2 seconds of inactivity
-      if (versionTapTimeout.current) {
-        clearTimeout(versionTapTimeout.current);
-      }
-      versionTapTimeout.current = setTimeout(() => {
-        setVersionTapCount(0);
-      }, 2000);
     }
-  };
+  }, [isLoading, isAuthenticated]);
+
+  if (isLoading || !showOptions) {
+    return (
+      <LinearGradient colors={['#1a5f1a', '#2d8b2d', '#3fa13f']} style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <MaterialCommunityIcons name="ticket" size={80} color="#FFD700" />
+          <ActivityIndicator size="large" color="#FFD700" style={{ marginTop: 20 }} />
+        </View>
+      </LinearGradient>
+    );
+  }
 
   return (
-    <LinearGradient
-      colors={['#1a5f1a', '#2d8b2d', '#3fa13f']}
-      style={styles.container}
-    >
+    <LinearGradient colors={['#1a5f1a', '#2d8b2d', '#3fa13f']} style={styles.container}>
       <View style={styles.content}>
         {/* Logo/Title */}
         <View style={styles.logoContainer}>
-          <TouchableOpacity
-            onLongPress={handleLogoLongPress}
-            onPressOut={handleLogoPressOut}
-            delayLongPress={5000}
-            activeOpacity={1}
-          >
-            <MaterialCommunityIcons name="ticket" size={80} color="#FFD700" />
-            <Text style={styles.title}>TAMBOLA</Text>
-            <Text style={styles.subtitle}>Housie Book</Text>
-          </TouchableOpacity>
+          <MaterialCommunityIcons name="ticket" size={80} color="#FFD700" />
+          <Text style={styles.title}>TAMBOLA</Text>
+          <Text style={styles.subtitle}>Online Multiplayer</Text>
         </View>
 
         {/* Description */}
         <View style={styles.descriptionBox}>
           <Text style={styles.description}>
-            Digital Tambola Book for Family Entertainment
+            Play Tambola with friends online!
           </Text>
           <View style={styles.features}>
-            <FeatureItem icon="account-multiple" text="Unlimited Players" />
-            <FeatureItem icon="ticket-account" text="100 Tickets/Player" />
-            <FeatureItem icon="phone-rotate-landscape" text="Offline Play" />
+            <FeatureItem icon="account-multiple" text="Multiplayer Rooms" />
+            <FeatureItem icon="ticket-account" text="Real-time Gameplay" />
+            <FeatureItem icon="trophy" text="Win Real Prizes" />
           </View>
         </View>
 
-        {/* Start Button */}
-        <TouchableOpacity
-          style={styles.startButton}
-          onPress={handleStart}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.startButtonText}>START NEW GAME</Text>
-          <MaterialCommunityIcons name="chevron-right" size={30} color="#1a5f1a" />
-        </TouchableOpacity>
+        {/* Action Buttons */}
+        {isAuthenticated ? (
+          <>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => router.push('/lobby')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.primaryButtonText}>ENTER LOBBY</Text>
+              <MaterialCommunityIcons name="chevron-right" size={30} color="#1a5f1a" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => router.push('/(tabs)/players')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.secondaryButtonText}>OFFLINE MODE</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => router.push('/auth/login')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.primaryButtonText}>LOGIN</Text>
+              <MaterialCommunityIcons name="login" size={30} color="#1a5f1a" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => router.push('/auth/signup')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.secondaryButtonText}>CREATE ACCOUNT</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.offlineButton}
+              onPress={() => router.push('/(tabs)/players')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.offlineButtonText}>Continue Offline</Text>
+            </TouchableOpacity>
+          </>
+        )}
 
         {/* Footer */}
-        <TouchableOpacity onPress={handleVersionTap} activeOpacity={1}>
-          <Text style={styles.footer}>Tap to Begin</Text>
-          <Text style={styles.version}>v1.0</Text>
-        </TouchableOpacity>
+        <Text style={styles.footer}>v2.0 - Multiplayer Edition</Text>
       </View>
     </LinearGradient>
   );
@@ -115,6 +121,11 @@ const FeatureItem = ({ icon, text }: { icon: string; text: string }) => (
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   content: {
     flex: 1,
@@ -168,7 +179,7 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontWeight: '500',
   },
-  startButton: {
+  primaryButton: {
     backgroundColor: '#FFD700',
     flexDirection: 'row',
     alignItems: 'center',
@@ -181,22 +192,45 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
+    width: '100%',
+    justifyContent: 'center',
+    marginBottom: 12,
   },
-  startButtonText: {
+  primaryButtonText: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#1a5f1a',
     letterSpacing: 1,
   },
-  footer: {
+  secondaryButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFD700',
+    marginBottom: 12,
+  },
+  secondaryButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFD700',
+  },
+  offlineButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    marginTop: 8,
+  },
+  offlineButtonText: {
     fontSize: 14,
     color: 'rgba(255, 255, 255, 0.7)',
+  },
+  footer: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.3)',
     marginTop: 32,
   },
-  version: {
-    fontSize: 10,
-    color: 'rgba(255, 255, 255, 0.3)',
-    marginTop: 4,
-    textAlign: 'center',
-  },
 });
+

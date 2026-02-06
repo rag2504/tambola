@@ -10,7 +10,10 @@
     "newArchEnabled": true,
 
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "LSApplicationQueriesSchemes": ["whatsapp"]
+      }
     },
 
     "android": {
@@ -19,7 +22,17 @@
         "backgroundColor": "#2E7D32"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.rag2504sorganization.tambola"
+      "package": "com.rag2504sorganization.tambola",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "whatsapp"
+            }
+          ]
+        }
+      ]
     },
 
     "androidStatusBar": {

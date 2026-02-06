@@ -109,44 +109,60 @@ export default function CreateRoomScreen() {
     if (!validateInputs()) return;
 
     setIsLoading(true);
+    const safeRoomName = (roomName || '').trim();
+    const safePassword = (password || '').trim();
+    const roomData = {
+      name: safeRoomName,
+      room_type: roomType,
+      ticket_price: parseInt(ticketPrice),
+      max_players: parseInt(maxPlayers),
+      min_players: parseInt(minPlayers),
+      auto_start: autoStart,
+      prizes: prizes
+        .filter(p => p.enabled)
+        .map(p => ({
+          prize_type: p.prize_type,
+          amount: parseInt(p.amount),
+          enabled: true,
+        })),
+      password: roomType === 'private' ? safePassword : undefined,
+    };
+
+    // 1. Only the CREATE ROOM API is in this try/catch – fail UI only when this fails
+    let createdRoom: any;
     try {
-      const safeRoomName = (roomName || "").trim();
-      const safePassword = (password || "").trim();
-
-      const roomData = {
-        name: safeRoomName,
-        room_type: roomType,
-        ticket_price: parseInt(ticketPrice),
-        max_players: parseInt(maxPlayers),
-        min_players: parseInt(minPlayers),
-        auto_start: autoStart,
-        prizes: prizes
-          .filter(p => p.enabled)
-          .map(p => ({
-            prize_type: p.prize_type,
-            amount: parseInt(p.amount),
-            enabled: true,
-          })),
-        password: roomType === 'private' ? safePassword : undefined,
-      };
-
-      const room = await roomAPI.createRoom(roomData);
-      const createdRoomName = room?.name ?? 'Room';
-
-      // Navigate first so we always get to lobby even if Alert callback fails (e.g. on web)
-      router.replace('/lobby');
-
-      // Then show success message (non-blocking)
-      Alert.alert(
-        'Room Created!',
-        `"${createdRoomName}" has been created. You can open it from the lobby.`,
-        [{ text: 'OK' }]
-      );
+      createdRoom = await roomAPI.createRoom(roomData);
     } catch (error: any) {
-      console.error('Error creating room:', error);
-      Alert.alert('Error', error.response?.data?.detail || error.message || 'Failed to create room');
-    } finally {
       setIsLoading(false);
+      Alert.alert('Error', error?.message || 'Failed to create room');
+      return;
+    }
+
+    // Only show error when API returned success: false (e.g. plain "Internal Server Error" from another call)
+    if (createdRoom && createdRoom.success === false) {
+      setIsLoading(false);
+      Alert.alert('Error', createdRoom.message || 'Failed to create room');
+      return;
+    }
+
+    setIsLoading(false);
+    const roomCode = createdRoom?.room_code ?? createdRoom?.id ?? '';
+    console.log('CREATE ROOM SUCCESS:', roomCode);
+
+    // Navigate immediately so room creates “instantly” in the UI
+    router.replace('/lobby');
+
+    Alert.alert(
+      'Room Created!',
+      `"${createdRoom?.name ?? 'Room'}" has been created. You can open it from the lobby.`,
+      [{ text: 'OK' }]
+    );
+
+    // 2. Secondary calls outside create try/catch – do not fail UI if these fail
+    try {
+      await roomAPI.getRooms();
+    } catch (e) {
+      console.log('Secondary API Failed (Ignored)', e);
     }
   };
 

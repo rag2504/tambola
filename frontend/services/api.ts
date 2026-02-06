@@ -11,8 +11,8 @@ if (!BACKEND_URL) {
 }
 const API_URL = `${BACKEND_URL}/api`;
 
-// Fetch wrapper with auth and error handling
-// Fetch wrapper with resilient networking (timeouts, safe parsing)
+// safeFetch: never throws on plain "Internal Server Error"; returns { success: false, message } instead.
+// Fetch wrapper with auth, timeouts, and safe parsing.
 const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
   const token = await AsyncStorage.getItem('auth_token');
 
@@ -40,19 +40,25 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
 
     // 2. Safe Parsing & Logging
     const text = await response.text();
-    console.log("API RAW RESPONSE:", text);
+    const trimmedText = (text || '').trim();
 
-    let data = null;
+    // Do NOT throw on plain "Internal Server Error" (e.g. from a secondary/follow-up failure)
+    if (trimmedText === 'Internal Server Error') {
+      console.log('API received plain "Internal Server Error" – returning success: false');
+      return { success: false, message: 'Internal Server Error' };
+    }
+
+    console.log('API RAW RESPONSE:', trimmedText.slice(0, 200) + (trimmedText.length > 200 ? '…' : ''));
+
+    let data: any = null;
     try {
       data = JSON.parse(text);
     } catch (e) {
-      // If it's not JSON, treat raw text as message or empty object
-      data = { message: text || "Invalid JSON response" };
+      data = { message: text || 'Invalid JSON response' };
     }
 
     // 3. Error Handling
     if (!response.ok) {
-      // Handle 401 - Token expired
       if (response.status === 401) {
         await AsyncStorage.removeItem('auth_token');
         await AsyncStorage.removeItem('user_data');

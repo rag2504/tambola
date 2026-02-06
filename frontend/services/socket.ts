@@ -34,8 +34,8 @@ class SocketService {
     this.socket = io(SOCKET_URL, {
       transports: ['websocket'],
       reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: Infinity,
+      timeout: 20000,
     });
 
     this.setupEventListeners();

@@ -6,6 +6,11 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "frontend",
+    "updates": {
+      "enabled": false,
+      "fallbackToCacheTimeout": 0,
+      "checkAutomatically": "ON_ERROR"
+    },
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
 

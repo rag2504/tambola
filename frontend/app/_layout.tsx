@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -5,6 +6,10 @@ import { GameStateProvider } from '../contexts/GameStateContext';
 import { AuthProvider } from '../contexts/AuthContext';
 
 export default function RootLayout() {
+  useEffect(() => {
+    console.log('Tunnel Mode Active - OTA Disabled');
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>

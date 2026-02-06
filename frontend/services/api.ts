@@ -1,18 +1,29 @@
 /**
  * API Service for Multiplayer Tambola
- * Using native fetch API for React Native compatibility
+ * Using native fetch API for React Native compatibility.
+ * Backend URL: EXPO_PUBLIC_BACKEND_URL only (no __DEV__ or tunnel URLs).
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// API Configuration
+// API Configuration – ONLY env; no dev/tunnel fallbacks
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 if (!BACKEND_URL) {
   console.error('EXPO_PUBLIC_BACKEND_URL is missing!');
 }
 const API_URL = `${BACKEND_URL}/api`;
 
-// safeFetch: never throws on plain "Internal Server Error"; returns { success: false, message } instead.
-// Fetch wrapper with auth, timeouts, and safe parsing.
+/** Safe parse: never throw on non-JSON; return { success: false, message } to prevent crash. */
+function safeParseResponseBody(text: string): any {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    console.log('Non JSON Response:', text);
+    return { success: false, message: text };
+  }
+}
+
+// safeFetch: never throws on plain "Internal Server Error"; uses text() only (no response.json()).
 const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
   const token = await AsyncStorage.getItem('auth_token');
 
@@ -25,7 +36,6 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  // 1. Timeout Logic (30s for Render cold start)
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
 
@@ -38,33 +48,26 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
 
     clearTimeout(timeoutId);
 
-    // 2. Safe Parsing & Logging
     const text = await response.text();
     const trimmedText = (text || '').trim();
 
-    // Do NOT throw on plain "Internal Server Error" (e.g. from a secondary/follow-up failure)
     if (trimmedText === 'Internal Server Error') {
       console.log('API received plain "Internal Server Error" – returning success: false');
       return { success: false, message: 'Internal Server Error' };
     }
 
-    console.log('API RAW RESPONSE:', trimmedText.slice(0, 200) + (trimmedText.length > 200 ? '…' : ''));
-
-    let data: any = null;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      data = { message: text || 'Invalid JSON response' };
+    const data = safeParseResponseBody(text);
+    if (data === null) {
+      return { success: false, message: 'Empty response' };
     }
 
-    // 3. Error Handling
     if (!response.ok) {
       if (response.status === 401) {
         await AsyncStorage.removeItem('auth_token');
         await AsyncStorage.removeItem('user_data');
         throw new Error('Unauthorized');
       }
-      throw new Error(data?.message || `Server Error (${response.status})`);
+      throw new Error((data && data.message) || `Server Error (${response.status})`);
     }
 
     return data;

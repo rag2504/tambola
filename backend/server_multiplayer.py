@@ -917,21 +917,48 @@ async def get_my_tickets(
 ):
     """Get user's tickets for a specific room"""
     try:
+        logger.info(f"Fetching tickets for user {current_user.get('id')} in room {room_id}")
+        
+        # Validate room exists
+        room = await db.rooms.find_one({"id": room_id})
+        if not room:
+            logger.warning(f"Room not found: {room_id}")
+            return []
+        
         tickets = await db.tickets.find({
             "room_id": room_id,
             "user_id": current_user["id"]
         }).to_list(100)
         
-        # Serialize tickets to remove ObjectId
-        serialized_tickets = [serialize_doc(t) for t in tickets]
+        logger.info(f"Found {len(tickets)} tickets in database")
         
-        logger.info(f"Found {len(serialized_tickets)} tickets for user {current_user['id']} in room {room_id}")
+        # Serialize tickets to remove ObjectId
+        serialized_tickets = []
+        for ticket in tickets:
+            try:
+                # Ensure ticket has required fields
+                if not ticket.get('grid') or not ticket.get('numbers'):
+                    logger.warning(f"Ticket {ticket.get('id')} missing grid or numbers, skipping")
+                    continue
+                    
+                serialized = serialize_doc(ticket)
+                
+                # Ensure marked_numbers exists
+                if 'marked_numbers' not in serialized:
+                    serialized['marked_numbers'] = []
+                
+                serialized_tickets.append(serialized)
+            except Exception as serialize_error:
+                logger.error(f"Error serializing ticket {ticket.get('id')}: {serialize_error}")
+                continue
+        
+        logger.info(f"Returning {len(serialized_tickets)} serialized tickets")
         
         # Return empty array if no tickets (not an error)
         return serialized_tickets
     except Exception as e:
-        logger.error(f"Error fetching tickets: {e}")
-        # Return empty array instead of error
+        logger.error(f"Error fetching tickets: {e}", exc_info=True)
+        # Return empty array instead of raising error
         return []
 
 
@@ -1039,5 +1066,6 @@ app.include_router(api_router)
 if __name__ == "__main__":
     import uvicorn
     # Use import string for reload; socket_app is the ASGI app
-    # Changed port to 8001 to avoid conflict with port 8000
-    uvicorn.run("server_multiplayer:socket_app", host="0.0.0.0", port=8001, reload=True)
+    # Get port from environment (Render provides PORT env var)
+    port = int(os.environ.get("PORT", 8001))
+    uvicorn.run("server_multiplayer:socket_app", host="0.0.0.0", port=port, reload=False)

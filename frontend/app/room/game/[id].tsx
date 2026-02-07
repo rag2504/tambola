@@ -18,6 +18,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../../contexts/AuthContext';
 import { roomAPI, ticketAPI, gameAPI } from '../../../services/api';
 import { socketService } from '../../../services/socket';
+import { getPendingTickets, clearPendingTickets } from '../../../services/gameTicketsCache';
 import * as Speech from 'expo-speech';
 
 const { width } = Dimensions.get('window');
@@ -65,34 +66,55 @@ export default function LiveGameScreen() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [gameEnded, setGameEnded] = useState(false);
   const autoCallInterval = useRef<number | null>(null);
+  const didInitRef = useRef(false);
 
   useEffect(() => {
     console.log('🎮 Game screen mounted for room:', params.id);
-    
-    // Ensure socket is connected
+
+    // Apply any tickets cached by the lobby when game_started fired before we mounted
+    const pending = getPendingTickets(params.id);
+    if (Array.isArray(pending) && pending.length > 0 && user?.id) {
+      const myTickets = pending.filter((t: any) => t.user_id === user.id);
+      const ticketsWithMarked = myTickets.map((t: any) => ({
+        ...t,
+        marked_numbers: t.marked_numbers || []
+      }));
+      if (ticketsWithMarked.length > 0) {
+        setTickets(ticketsWithMarked);
+        setSelectedTicket(ticketsWithMarked[0]);
+        clearPendingTickets(params.id);
+        console.log('✅ Applied pending tickets from cache:', ticketsWithMarked.length);
+      }
+    }
+
+    // Init socket and game data once per mount
+    if (didInitRef.current) return;
+    didInitRef.current = true;
+
     if (!socketService.isConnected()) {
       console.log('🔌 Socket not connected, connecting...');
       socketService.connect().then(() => {
         console.log('✅ Socket connected');
         socketService.joinRoom(params.id);
-        loadGameData();
         setupSocketListeners();
+        loadGameData();
       });
     } else {
       console.log('✅ Socket already connected');
       socketService.joinRoom(params.id);
-      loadGameData();
       setupSocketListeners();
+      loadGameData();
     }
 
     return () => {
       console.log('🎮 Game screen unmounting');
+      didInitRef.current = false;
       cleanupSocketListeners();
       if (autoCallInterval.current) {
         clearInterval(autoCallInterval.current);
       }
     };
-  }, []);
+  }, [user?.id]);
 
   // Reload tickets when screen comes into focus (e.g., after buying tickets)
   useFocusEffect(

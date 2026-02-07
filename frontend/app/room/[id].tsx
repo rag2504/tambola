@@ -18,6 +18,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { roomAPI, ticketAPI } from '../../services/api';
 import { socketService } from '../../services/socket';
+import { setPendingTicketsForRoom } from '../../services/gameTicketsCache';
 
 interface Room {
   id: string;
@@ -140,6 +141,10 @@ export default function RoomScreen() {
 
   const handleGameStarted = (data: any) => {
     console.log('Game started:', data);
+    // Store tickets so game screen can apply them on mount (it mounts after this event)
+    if (Array.isArray(data?.tickets)) {
+      setPendingTicketsForRoom(params.id, data.tickets);
+    }
     Alert.alert('Game Started!', 'The game is starting now', [
       {
         text: 'OK',

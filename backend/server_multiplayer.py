@@ -12,6 +12,7 @@ from typing import List, Optional
 from datetime import datetime
 import random
 import socketio
+import uuid
 
 # Import models and auth
 from models import *
@@ -909,6 +910,95 @@ async def get_my_tickets(
         logger.error(f"Error fetching tickets: {e}")
         # Return empty array instead of error
         return []
+
+
+@api_router.post("/tickets/buy")
+async def buy_tickets(
+    room_id: str,
+    quantity: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Buy tickets for a room"""
+    try:
+        # Validate quantity
+        if quantity < 1 or quantity > 10:
+            raise HTTPException(status_code=400, detail="Quantity must be between 1 and 10")
+        
+        # Get room
+        room = await db.rooms.find_one({"id": room_id})
+        if not room:
+            raise HTTPException(status_code=404, detail="Room not found")
+        
+        # Check if room is still waiting
+        if room.get("status") != "waiting":
+            raise HTTPException(status_code=400, detail="Cannot buy tickets for a room that has started")
+        
+        # Calculate total cost
+        total_cost = room["ticket_price"] * quantity
+        
+        # Get user's wallet balance
+        wallet = await db.wallets.find_one({"user_id": current_user["id"]})
+        if not wallet:
+            raise HTTPException(status_code=400, detail="Wallet not found")
+        
+        balance = wallet.get("balance", 0)
+        if balance < total_cost:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient balance. Need ₹{total_cost}, have ₹{balance}"
+            )
+        
+        # Deduct from wallet
+        new_balance = balance - total_cost
+        await db.wallets.update_one(
+            {"user_id": current_user["id"]},
+            {"$set": {"balance": new_balance}}
+        )
+        
+        # Record transaction
+        transaction_id = str(uuid.uuid4())
+        await db.transactions.insert_one({
+            "id": transaction_id,
+            "user_id": current_user["id"],
+            "type": "debit",
+            "amount": total_cost,
+            "description": f"Bought {quantity} ticket(s) for room {room['name']}",
+            "created_at": datetime.utcnow()
+        })
+        
+        # Generate tickets
+        tickets_created = []
+        for i in range(quantity):
+            ticket_id = str(uuid.uuid4())
+            ticket_number = await db.tickets.count_documents({"room_id": room_id}) + 1
+            ticket_grid = generate_tambola_ticket(ticket_number)
+            
+            new_ticket = {
+                "id": ticket_id,
+                "room_id": room_id,
+                "user_id": current_user["id"],
+                "ticket_number": ticket_number,
+                "grid": ticket_grid,
+                "marked_numbers": [],
+                "created_at": datetime.utcnow()
+            }
+            
+            await db.tickets.insert_one(new_ticket)
+            tickets_created.append(serialize_doc(new_ticket))
+        
+        logger.info(f"User {current_user['id']} bought {quantity} tickets for room {room_id}")
+        
+        return {
+            "message": f"Successfully purchased {quantity} ticket(s)",
+            "tickets": tickets_created,
+            "new_balance": new_balance
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error buying tickets: {e}")
+        raise HTTPException(status_code=500, detail="Failed to purchase tickets")
 
 
 # Include router

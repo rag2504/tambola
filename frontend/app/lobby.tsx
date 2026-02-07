@@ -209,10 +209,10 @@ export default function LobbyScreen() {
           <View style={styles.headerRight}>
             <TouchableOpacity
               style={styles.walletButton}
-              onPress={() => router.push('/profile')}
+              onPress={() => router.push('/wallet')}
             >
               <MaterialCommunityIcons name="wallet" size={24} color="#FFD700" />
-              <Text style={styles.walletText}>₹{user?.wallet_balance || 0}</Text>
+              <Text style={styles.walletText}>₹{(user?.wallet_balance ?? 0).toFixed(0)}</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => router.push('/profile')}>
               <MaterialCommunityIcons name="account-circle" size={32} color="#FFD700" />

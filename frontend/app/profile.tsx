@@ -84,10 +84,34 @@ export default function ProfileScreen() {
 
           <View style={styles.card}>
             <Row icon="phone" label="Mobile" value={user.mobile} />
-            <Row icon="wallet" label="Wallet" value={`₹ ${(user.wallet_balance ?? 0).toFixed(2)}`} />
+            <TouchableOpacity style={styles.row} onPress={() => router.push('/wallet')}>
+              <MaterialCommunityIcons name="wallet" size={24} color="#FFD700" />
+              <Text style={styles.rowLabel}>Wallet</Text>
+              <Text style={styles.rowValue}>₹{(user.wallet_balance ?? 0).toFixed(2)}</Text>
+              <MaterialCommunityIcons name="chevron-right" size={24} color="#FFD700" />
+            </TouchableOpacity>
             <Row icon="trophy" label="Games played" value={String(user.total_games ?? 0)} />
             <Row icon="medal" label="Wins" value={String(user.total_wins ?? 0)} />
             <Row icon="cash" label="Total winnings" value={`₹ ${(user.total_winnings ?? 0).toFixed(2)}`} />
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Game history</Text>
+            <TouchableOpacity style={styles.row} onPress={() => router.push('/winnings')}>
+              <MaterialCommunityIcons name="trophy" size={24} color="#FFD700" />
+              <Text style={styles.rowLabel}>Winnings</Text>
+              <MaterialCommunityIcons name="chevron-right" size={24} color="#FFD700" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.row} onPress={() => router.push('/recent-games')}>
+              <MaterialCommunityIcons name="history" size={24} color="#FFD700" />
+              <Text style={styles.rowLabel}>Recent games</Text>
+              <MaterialCommunityIcons name="chevron-right" size={24} color="#FFD700" />
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.row, { borderBottomWidth: 0 }]} onPress={() => router.push('/completed-games')}>
+              <MaterialCommunityIcons name="flag-checkered" size={24} color="#FFD700" />
+              <Text style={styles.rowLabel}>Completed games</Text>
+              <MaterialCommunityIcons name="chevron-right" size={24} color="#FFD700" />
+            </TouchableOpacity>
           </View>
 
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
@@ -157,6 +181,7 @@ const styles = StyleSheet.create({
   },
   rowLabel: { flex: 1, fontSize: 14, color: 'rgba(255,255,255,0.8)' },
   rowValue: { fontSize: 16, fontWeight: '600', color: '#FFF' },
+  sectionTitle: { fontSize: 14, fontWeight: '600', color: '#FFD700', marginBottom: 8 },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',

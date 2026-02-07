@@ -150,6 +150,14 @@ export const roomAPI = {
     return apiFetch(`/rooms/${roomId}`);
   },
 
+  getCompletedRooms: async () => {
+    return apiFetch('/rooms/completed');
+  },
+
+  getRecentRooms: async (limit = 20) => {
+    return apiFetch(`/rooms/recent?limit=${limit}`);
+  },
+
   /** Get all tickets in a room (host only) - for admin winner selection */
   getRoomTickets: async (roomId: string) => {
     return apiFetch(`/rooms/${roomId}/tickets`);
@@ -208,6 +216,13 @@ export const walletAPI = {
 
   getTransactions: async () => {
     return apiFetch('/wallet/transactions');
+  },
+};
+
+// ============= WINNINGS API =============
+export const winningsAPI = {
+  getMyWinnings: async (limit = 50) => {
+    return apiFetch(`/users/me/winnings?limit=${limit}`);
   },
 };
 

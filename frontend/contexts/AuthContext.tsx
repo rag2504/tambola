@@ -50,6 +50,29 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user]);
 
+  // Real-time wallet update from socket
+  useEffect(() => {
+    if (!user) return;
+    const handleWalletUpdated = (data: { wallet_balance?: number }) => {
+      const balance = data?.wallet_balance;
+      if (typeof balance === 'number') {
+        setUser((prev) => (prev ? { ...prev, wallet_balance: balance } : null));
+        AsyncStorage.getItem('user_data').then((s) => {
+          if (s) {
+            try {
+              const u = JSON.parse(s);
+              AsyncStorage.setItem('user_data', JSON.stringify({ ...u, wallet_balance: balance }));
+            } catch (_) {}
+          }
+        });
+      }
+    };
+    socketService.on('wallet_updated', handleWalletUpdated);
+    return () => {
+      socketService.off('wallet_updated', handleWalletUpdated);
+    };
+  }, [user?.id]);
+
   const loadUser = async () => {
     try {
       const token = await AsyncStorage.getItem('auth_token');

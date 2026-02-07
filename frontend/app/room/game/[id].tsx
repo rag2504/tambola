@@ -192,6 +192,12 @@ export default function LiveGameScreen() {
     return ticket;
   };
 
+  const handlePrizePoolUpdated = (data: any) => {
+    if (data?.room_id === params.id && typeof data.prize_pool === 'number') {
+      setRoom((prev) => (prev ? { ...prev, prize_pool: data.prize_pool } : null));
+    }
+  };
+
   const setupSocketListeners = () => {
     socketService.on('number_called', handleNumberCalled);
     socketService.on('prize_claimed', handlePrizeClaimed);
@@ -199,9 +205,10 @@ export default function LiveGameScreen() {
     socketService.on('game_started', handleGameStarted);
     socketService.on('game_paused', handleGamePaused);
     socketService.on('game_ended', handleGameEnded);
-    socketService.on('game_completed', handleGameCompleted); // Graceful completion
-    socketService.on('ticket_updated', handleTicketUpdated); // Auto-marking
-    socketService.on('ticket_purchased', handleTicketPurchased); // New ticket purchased
+    socketService.on('game_completed', handleGameCompleted);
+    socketService.on('ticket_updated', handleTicketUpdated);
+    socketService.on('ticket_purchased', handleTicketPurchased);
+    socketService.on('prize_pool_updated', handlePrizePoolUpdated);
   };
 
   const cleanupSocketListeners = () => {
@@ -214,6 +221,7 @@ export default function LiveGameScreen() {
     socketService.off('game_completed');
     socketService.off('ticket_updated');
     socketService.off('ticket_purchased');
+    socketService.off('prize_pool_updated');
   };
 
   const handleGameCompleted = (data: any) => {

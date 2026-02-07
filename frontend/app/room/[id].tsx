@@ -117,16 +117,24 @@ export default function RoomScreen() {
     }
   };
 
+  const handlePrizePoolUpdated = (data: any) => {
+    if (data?.room_id === params.id && typeof data.prize_pool === 'number') {
+      setRoom((prev) => (prev ? { ...prev, prize_pool: data.prize_pool } : null));
+    }
+  };
+
   const setupSocketListeners = () => {
     socketService.on('player_joined', handlePlayerJoined);
     socketService.on('player_left', handlePlayerLeft);
     socketService.on('game_started', handleGameStarted);
+    socketService.on('prize_pool_updated', handlePrizePoolUpdated);
   };
 
   const cleanupSocketListeners = () => {
     socketService.off('player_joined', handlePlayerJoined);
     socketService.off('player_left', handlePlayerLeft);
     socketService.off('game_started', handleGameStarted);
+    socketService.off('prize_pool_updated', handlePrizePoolUpdated);
   };
 
   const handlePlayerJoined = (data: any) => {

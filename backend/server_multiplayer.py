@@ -258,54 +258,50 @@ async def signup(user_data: UserCreate):
             detail="Mobile number already registered"
         )
     
-    # Create user
+    # Create user with ₹500 new user bonus (wallet_balance on user doc)
     user = User(
         name=user_data.name,
         email=user_data.email,
         mobile=user_data.mobile,
-        password_hash=get_password_hash(user_data.password)
+        password_hash=get_password_hash(user_data.password),
+        wallet_balance=500.0,
     )
-    
-    await db.users.insert_one(user.dict())
-    
-    # Create wallet with ₹500 initial balance
+    user_dict = user.dict()
+    await db.users.insert_one(user_dict)
+
+    # Create wallet record for consistency (optional; balance lives on user doc)
     wallet_id = str(uuid.uuid4())
-    wallet = {
+    await db.wallets.insert_one({
         "id": wallet_id,
         "user_id": user.id,
-        "balance": 500.0,  # ₹500 initial balance
-        "created_at": datetime.utcnow()
-    }
-    await db.wallets.insert_one(wallet)
-    
-    # Create initial transaction record
-    transaction_id = str(uuid.uuid4())
+        "balance": 500.0,
+        "created_at": datetime.utcnow(),
+    })
+
     await db.transactions.insert_one({
-        "id": transaction_id,
+        "id": str(uuid.uuid4()),
         "user_id": user.id,
         "type": "credit",
         "amount": 500.0,
-        "description": "Welcome bonus - Initial wallet balance",
-        "created_at": datetime.utcnow()
+        "description": "Welcome bonus - New user",
+        "balance_after": 500.0,
+        "created_at": datetime.utcnow(),
     })
-    
+
     logger.info(f"Created new user {user.id} with ₹500 welcome bonus")
-    
-    # Create token
+
     token = create_user_token(user.id, user.email)
-    
-    # Return user profile
     profile = UserProfile(
         id=user.id,
         name=user.name,
         email=user.email,
         mobile=user.mobile,
         profile_pic=user.profile_pic,
-        wallet_balance=user.wallet_balance,
+        wallet_balance=500.0,
         total_games=user.total_games,
         total_wins=user.total_wins,
         total_winnings=user.total_winnings,
-        created_at=user.created_at
+        created_at=user.created_at,
     )
     
     return Token(access_token=token, user=profile)
@@ -378,17 +374,37 @@ async def get_rooms(
     status: Optional[RoomStatus] = None,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get list of available rooms"""
+    """Get list of available rooms (main lobby: only waiting or active)."""
     query = {}
     if room_type:
         query["room_type"] = room_type
-    if status:
+    if status is not None:
         query["status"] = status
     else:
-        query["status"] = {"$in": [RoomStatus.WAITING, RoomStatus.ACTIVE]}
-    
+        query["status"] = {"$in": [RoomStatus.WAITING.value, RoomStatus.ACTIVE.value]}
     rooms = await db.rooms.find(query).sort("created_at", -1).limit(50).to_list(50)
-    # Serialize to remove ObjectId
+    serialized_rooms = [serialize_doc(room) for room in rooms]
+    return [Room(**room) for room in serialized_rooms]
+
+
+@api_router.get("/rooms/completed", response_model=List[Room])
+async def get_rooms_completed(
+    limit: int = 50,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get completed rooms."""
+    rooms = await db.rooms.find({"status": RoomStatus.COMPLETED.value}).sort("completed_at", -1).limit(limit).to_list(limit)
+    serialized_rooms = [serialize_doc(room) for room in rooms]
+    return [Room(**room) for room in serialized_rooms]
+
+
+@api_router.get("/rooms/recent", response_model=List[Room])
+async def get_rooms_recent(
+    limit: int = 20,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get recently active/completed rooms."""
+    rooms = await db.rooms.find({"status": {"$in": [RoomStatus.ACTIVE.value, RoomStatus.COMPLETED.value]}}).sort("started_at", -1).limit(limit).to_list(limit)
     serialized_rooms = [serialize_doc(room) for room in rooms]
     return [Room(**room) for room in serialized_rooms]
 
@@ -602,19 +618,24 @@ async def buy_tickets(
     )
     await db.transactions.insert_one(transaction.dict())
     
-    # Update room
+    # Update room: prize_pool = ticket_price * tickets_sold (dynamic)
+    new_tickets_sold = room["tickets_sold"] + purchase.quantity
+    new_prize_pool = room["ticket_price"] * new_tickets_sold
     await db.rooms.update_one(
         {"id": purchase.room_id},
         {
-            "$inc": {
-                "tickets_sold": purchase.quantity,
-                "prize_pool": total_cost * 0.8  # 80% goes to prize pool
-            }
+            "$set": {"prize_pool": new_prize_pool},
+            "$inc": {"tickets_sold": purchase.quantity},
         }
     )
-    
+    await sio.emit("prize_pool_updated", {"room_id": purchase.room_id, "prize_pool": new_prize_pool}, room=purchase.room_id)
+
     logger.info(f"User {current_user['id']} bought {purchase.quantity} tickets for room {purchase.room_id}")
-    
+
+    # Emit wallet_updated to buyer so UI updates immediately
+    from socket_handlers import emit_to_user
+    await emit_to_user(sio, current_user["id"], "wallet_updated", {"wallet_balance": new_balance})
+
     return MessageResponse(
         message=f"Successfully purchased {purchase.quantity} ticket(s)",
         data={"tickets": tickets, "new_balance": new_balance}
@@ -669,7 +690,8 @@ async def add_money(
     await db.transactions.insert_one(transaction.dict())
     
     logger.info(f"User {current_user['id']} added ₹{wallet_data.amount} to wallet")
-    
+    from socket_handlers import emit_to_user
+    await emit_to_user(sio, current_user["id"], "wallet_updated", {"wallet_balance": new_balance})
     return MessageResponse(
         message=f"Successfully added ₹{wallet_data.amount}",
         data={"new_balance": new_balance}
@@ -685,8 +707,18 @@ async def get_transactions(
     transactions = await db.transactions.find({
         "user_id": current_user["id"]
     }).sort("created_at", -1).limit(limit).to_list(limit)
-    
     return [Transaction(**txn) for txn in transactions]
+
+
+@api_router.get("/users/me/winnings")
+async def get_my_winnings(
+    limit: int = 50,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get current user's winnings history (game history with prizes)."""
+    cursor = db.winnings.find({"user_id": current_user["id"]}).sort("completed_at", -1).limit(limit)
+    items = await cursor.to_list(limit)
+    return [serialize_doc(doc) for doc in items]
 
 
 # ============= GAME CONTROL ROUTES =============
@@ -885,14 +917,11 @@ async def claim_prize_api(
         {"$push": {"winners": winner.dict()}}
     )
     
-    # Broadcast via socket
-    await sio.emit('prize_won', {
-        "winner": winner.dict(),
-        "room_id": room_id
-    }, room=room_id)
-    
+    from socket_handlers import emit_to_user
+    await sio.emit('prize_claimed', {"winner": winner.dict(), "room_id": room_id}, room=room_id)
+    await emit_to_user(sio, current_user["id"], "wallet_updated", {"wallet_balance": new_balance})
+
     logger.info(f"User {current_user['id']} won {claim.prize_type} in room {room_id}")
-    
     return MessageResponse(
         message=f"Congratulations! You won {claim.prize_type.value}",
         data={"winner": winner.dict(), "new_balance": new_balance}

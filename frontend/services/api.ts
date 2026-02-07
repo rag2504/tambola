@@ -51,8 +51,12 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
     const text = await response.text();
     const trimmedText = (text || '').trim();
 
+    // 502 Bad Gateway or any HTML error page – do not throw, return safe object
+    if (response.status === 502 || (trimmedText.length > 0 && trimmedText.startsWith('<'))) {
+      console.warn('API received HTML or 502 – server may be unavailable');
+      return { success: false, message: 'Server unavailable. Try again in a moment.' };
+    }
     if (trimmedText === 'Internal Server Error') {
-      console.log('API received plain "Internal Server Error" – returning success: false');
       return { success: false, message: 'Internal Server Error' };
     }
 
@@ -66,6 +70,10 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
         await AsyncStorage.removeItem('auth_token');
         await AsyncStorage.removeItem('user_data');
         throw new Error('Unauthorized');
+      }
+      // 5xx and other errors – return instead of throw so callers can handle
+      if (response.status >= 500) {
+        return { success: false, message: data?.message || 'Server error. Try again later.' };
       }
       throw new Error((data && data.message) || `Server Error (${response.status})`);
     }

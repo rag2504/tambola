@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { roomAPI } from '../services/api';
 
@@ -31,21 +32,25 @@ interface Room {
 
 export default function LobbyScreen() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, refreshProfile } = useAuth();
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'public' | 'private'>('all');
 
+  // Refresh wallet balance from API whenever dashboard is shown so amount is correct
+  useFocusEffect(
+    React.useCallback(() => {
+      refreshProfile();
+    }, [refreshProfile])
+  );
+
   useEffect(() => {
     loadRooms();
 
-    // Ensure socket is connected for real-time updates
     import('../services/socket').then(({ socketService }) => {
       if (!socketService.isConnected()) {
-        socketService.connect().catch(err => {
-          console.error('Failed to connect socket:', err);
-        });
+        socketService.connect().catch(() => {});
       }
     });
   }, [filter]);

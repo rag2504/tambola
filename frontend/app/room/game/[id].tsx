@@ -198,6 +198,11 @@ export default function LiveGameScreen() {
     }
   };
 
+  const handleSocketError = (data: any) => {
+    const msg = data?.message || (typeof data === 'string' ? data : 'Something went wrong');
+    Alert.alert('Notice', msg);
+  };
+
   const setupSocketListeners = () => {
     socketService.on('number_called', handleNumberCalled);
     socketService.on('prize_claimed', handlePrizeClaimed);
@@ -209,6 +214,7 @@ export default function LiveGameScreen() {
     socketService.on('ticket_updated', handleTicketUpdated);
     socketService.on('ticket_purchased', handleTicketPurchased);
     socketService.on('prize_pool_updated', handlePrizePoolUpdated);
+    socketService.on('error', handleSocketError);
   };
 
   const cleanupSocketListeners = () => {
@@ -222,6 +228,7 @@ export default function LiveGameScreen() {
     socketService.off('ticket_updated');
     socketService.off('ticket_purchased');
     socketService.off('prize_pool_updated');
+    socketService.off('error');
   };
 
   const handleGameCompleted = (data: any) => {

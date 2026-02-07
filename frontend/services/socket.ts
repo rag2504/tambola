@@ -116,7 +116,8 @@ class SocketService {
     });
 
     this.socket.on('error', (error: any) => {
-      console.error('❌ Socket error:', error);
+      const msg = error?.message || (typeof error === 'string' ? error : JSON.stringify(error));
+      console.warn('Socket message:', msg);
     });
 
     this.socket.on('authenticated', (data: any) => {

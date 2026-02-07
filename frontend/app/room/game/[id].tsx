@@ -259,12 +259,13 @@ export default function LiveGameScreen() {
   };
 
   const handleGameStarted = (data: any) => {
-    console.log('Game started:', data);
+    console.log('🎮 Game started:', data);
     
     // Load tickets from game_started event
     if (data.tickets) {
       const myTickets = data.tickets.filter((t: any) => t.user_id === user?.id);
       console.log('✅ Got tickets from game_started event:', myTickets.length);
+      console.log('✅ My tickets:', myTickets);
       
       // Ensure marked_numbers is initialized
       const ticketsWithMarked = myTickets.map((t: any) => ({
@@ -272,11 +273,18 @@ export default function LiveGameScreen() {
         marked_numbers: t.marked_numbers || []
       }));
       
+      console.log('✅ Setting tickets to state:', ticketsWithMarked);
       setTickets(ticketsWithMarked);
+      
       if (ticketsWithMarked.length > 0) {
         setSelectedTicket(ticketsWithMarked[0]);
         console.log('✅ Selected first ticket:', ticketsWithMarked[0].id);
+        console.log('✅ Ticket grid:', ticketsWithMarked[0].grid);
+      } else {
+        console.log('⚠️ No tickets for current user');
       }
+    } else {
+      console.log('⚠️ No tickets in game_started event');
     }
     
     Alert.alert('Game Started!', 'The game has begun. Good luck!');
@@ -827,6 +835,8 @@ export default function LiveGameScreen() {
                 <TouchableOpacity
                   style={styles.buyTicketButton}
                   onPress={() => {
+                    console.log('📊 Current tickets state:', tickets);
+                    console.log('📊 Selected ticket:', selectedTicket);
                     Alert.alert(
                       'Purchase Tickets',
                       'Please go back to the room lobby to purchase tickets before the game starts',
@@ -844,7 +854,7 @@ export default function LiveGameScreen() {
             </View>
           ) : selectedTicket ? (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>My Ticket</Text>
+              <Text style={styles.sectionTitle}>My Ticket ({tickets.length} total)</Text>
               {renderTicket(selectedTicket)}
             </View>
           ) : null}

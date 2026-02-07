@@ -74,6 +74,33 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+# ============= SERIALIZATION HELPER =============
+from bson import ObjectId
+from typing import Any
+
+def serialize_doc(doc: Any) -> Any:
+    """
+    Recursively convert MongoDB document to JSON-serializable format.
+    Converts ObjectId to string and handles nested structures.
+    """
+    if doc is None:
+        return None
+    
+    if isinstance(doc, ObjectId):
+        return str(doc)
+    
+    if isinstance(doc, dict):
+        return {key: serialize_doc(value) for key, value in doc.items()}
+    
+    if isinstance(doc, list):
+        return [serialize_doc(item) for item in doc]
+    
+    if isinstance(doc, datetime):
+        return doc.isoformat()
+    
+    return doc
+
+
 # ============= TICKET GENERATION (from original) =============
 def generate_tambola_ticket(ticket_number: int):
     """Generate a valid Tambola ticket"""
@@ -337,7 +364,9 @@ async def get_rooms(
         query["status"] = {"$in": [RoomStatus.WAITING, RoomStatus.ACTIVE]}
     
     rooms = await db.rooms.find(query).sort("created_at", -1).limit(50).to_list(50)
-    return [Room(**room) for room in rooms]
+    # Serialize to remove ObjectId
+    serialized_rooms = [serialize_doc(room) for room in rooms]
+    return [Room(**room) for room in serialized_rooms]
 
 
 @api_router.post("/rooms/create", response_model=Room)
@@ -378,7 +407,9 @@ async def get_room(
     room = await db.rooms.find_one({"id": room_id})
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
-    return Room(**room)
+    # Serialize to remove ObjectId
+    serialized_room = serialize_doc(room)
+    return Room(**serialized_room)
 
 
 @api_router.get("/rooms/{room_id}/tickets", response_model=List[Ticket])
@@ -436,7 +467,8 @@ async def join_room(
     # Check if already joined
     player_ids = [p["id"] for p in room.get("players", [])]
     if current_user["id"] in player_ids:
-        raise HTTPException(status_code=400, detail="Already in room")
+        # Return success if already in room (idempotent)
+        return MessageResponse(message="Already in room", data={"room_id": room_id})
     
     # Check password for private rooms
     if room["room_type"] == RoomType.PRIVATE and room.get("password"):

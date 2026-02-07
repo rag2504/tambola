@@ -2,15 +2,39 @@
 Socket.IO Event Handlers for Real-time Gameplay
 """
 import socketio
-from typing import Dict
+from typing import Dict, Any
 import logging
 from datetime import datetime
+from bson import ObjectId
 
 logger = logging.getLogger(__name__)
 
 # Store active connections
 active_connections: Dict[str, str] = {}  # sid -> user_id
 user_rooms: Dict[str, str] = {}  # user_id -> room_id
+
+
+def serialize_doc(doc: Any) -> Any:
+    """
+    Recursively convert MongoDB document to JSON-serializable format.
+    Converts ObjectId to string and handles nested structures.
+    """
+    if doc is None:
+        return None
+    
+    if isinstance(doc, ObjectId):
+        return str(doc)
+    
+    if isinstance(doc, dict):
+        return {key: serialize_doc(value) for key, value in doc.items()}
+    
+    if isinstance(doc, list):
+        return [serialize_doc(item) for item in doc]
+    
+    if isinstance(doc, datetime):
+        return doc.isoformat()
+    
+    return doc
 
 
 async def register_socket_events(sio: socketio.AsyncServer, db):
@@ -68,8 +92,11 @@ async def register_socket_events(sio: socketio.AsyncServer, db):
             # Get room data
             room = await db.rooms.find_one({"id": room_id})
             if room:
+                # Serialize room data to remove ObjectId
+                serialized_room = serialize_doc(room)
+                
                 await sio.emit('room_joined', {
-                    'room': room,
+                    'room': serialized_room,
                     'user_id': user_id
                 }, room=sid)
                 

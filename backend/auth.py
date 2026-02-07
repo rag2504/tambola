@@ -59,8 +59,7 @@ def decode_token(token: str) -> dict:
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db = None  # Will be injected
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> dict:
     """Get current authenticated user from token"""
     token = credentials.credentials
@@ -73,7 +72,7 @@ async def get_current_user(
             detail="Could not validate credentials"
         )
     
-    # Get user from database
+    # Get user from database - will be injected by the route
     from motor.motor_asyncio import AsyncIOMotorClient
     mongo_url = os.getenv("MONGO_URL")
     client = AsyncIOMotorClient(mongo_url)

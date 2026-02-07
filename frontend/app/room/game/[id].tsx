@@ -51,7 +51,7 @@ export default function LiveGameScreen() {
   const [showTicketModal, setShowTicketModal] = useState(false);
   const [showClaimModal, setShowClaimModal] = useState(false);
   const [autoCall, setAutoCall] = useState(false);
-  const autoCallInterval = useRef<NodeJS.Timeout | null>(null);
+  const autoCallInterval = useRef<number | null>(null);
 
   useEffect(() => {
     loadGameData();
@@ -76,19 +76,18 @@ export default function LiveGameScreen() {
       const roomData = await roomAPI.getRoom(params.id);
       setRoom(roomData);
 
-      // Load user's tickets (mock for now - will be from API)
-      // TODO: Replace with actual API call
-      const mockTickets: Ticket[] = [
-        {
-          id: '1',
-          ticket_number: 1,
-          grid: generateMockTicket(),
-          numbers: [],
-          marked_numbers: [],
-        },
-      ];
-      setTickets(mockTickets);
-      setSelectedTicket(mockTickets[0]);
+      // Load user's tickets
+      try {
+        const userTickets = await ticketAPI.getMyTickets(params.id);
+        setTickets(userTickets);
+        if (userTickets.length > 0) {
+          setSelectedTicket(userTickets[0]);
+        }
+      } catch (ticketError) {
+        console.error('Error loading tickets:', ticketError);
+        // If no tickets, show empty state
+        setTickets([]);
+      }
     } catch (error) {
       console.error('Error loading game:', error);
     }

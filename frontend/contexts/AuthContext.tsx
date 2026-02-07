@@ -76,7 +76,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setUser(response.user);
     } catch (error: any) {
       console.error('Login error:', error);
-      throw new Error(error.response?.data?.detail || 'Login failed');
+      throw new Error(error.message || 'Login failed');
     }
   };
 
@@ -91,7 +91,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setUser(response.user);
     } catch (error: any) {
       console.error('Signup error:', error);
-      throw new Error(error.response?.data?.detail || 'Signup failed');
+      throw new Error(error.message || 'Signup failed');
     }
   };
 

@@ -164,8 +164,9 @@ def validate_win(ticket: dict, called_numbers: List[int], prize_type: PrizeType)
     ticket_called = [n for n in numbers if n in called_numbers]
     
     if prize_type == PrizeType.EARLY_FIVE:
-        # First 5 numbers of ticket
-        return len(ticket_called) >= 5 and all(n in called_numbers for n in numbers[:5])
+        # First 5 called numbers that match the ticket
+        matching_numbers = [n for n in called_numbers if n in numbers]
+        return len(matching_numbers) >= 5
     
     elif prize_type == PrizeType.TOP_LINE:
         top_line = [n for n in grid[0] if n is not None]

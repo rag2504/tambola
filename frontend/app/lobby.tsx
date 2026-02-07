@@ -86,7 +86,7 @@ export default function LobbyScreen() {
                   params: { id: room.id },
                 });
               } catch (error: any) {
-                Alert.alert('Error', error.response?.data?.detail || error.message || 'Failed to join room');
+                Alert.alert('Error', error.message || 'Failed to join room');
               } finally {
                 setJoiningRoomId(null);
               }
@@ -104,7 +104,7 @@ export default function LobbyScreen() {
           params: { id: room.id },
         });
       } catch (error: any) {
-        Alert.alert('Error', error.response?.data?.detail || error.message || 'Failed to join room');
+        Alert.alert('Error', error.message || 'Failed to join room');
       } finally {
         setJoiningRoomId(null);
       }
@@ -200,7 +200,7 @@ export default function LobbyScreen() {
           <View style={styles.headerRight}>
             <TouchableOpacity
               style={styles.walletButton}
-              onPress={() => router.push('/(tabs)/wallet' as any)}
+              onPress={() => router.push('/profile')}
             >
               <MaterialCommunityIcons name="wallet" size={24} color="#FFD700" />
               <Text style={styles.walletText}>₹{user?.wallet_balance || 0}</Text>

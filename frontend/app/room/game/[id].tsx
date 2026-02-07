@@ -67,10 +67,26 @@ export default function LiveGameScreen() {
   const autoCallInterval = useRef<number | null>(null);
 
   useEffect(() => {
-    loadGameData();
-    setupSocketListeners();
+    console.log('🎮 Game screen mounted for room:', params.id);
+    
+    // Ensure socket is connected
+    if (!socketService.isConnected()) {
+      console.log('🔌 Socket not connected, connecting...');
+      socketService.connect().then(() => {
+        console.log('✅ Socket connected');
+        socketService.joinRoom(params.id);
+        loadGameData();
+        setupSocketListeners();
+      });
+    } else {
+      console.log('✅ Socket already connected');
+      socketService.joinRoom(params.id);
+      loadGameData();
+      setupSocketListeners();
+    }
 
     return () => {
+      console.log('🎮 Game screen unmounting');
       cleanupSocketListeners();
       if (autoCallInterval.current) {
         clearInterval(autoCallInterval.current);
@@ -93,11 +109,16 @@ export default function LiveGameScreen() {
 
   const loadTickets = async () => {
     try {
+      console.log('🎫 Loading tickets for room:', params.id);
       const userTickets = await ticketAPI.getMyTickets(params.id);
+      
+      console.log('🎫 API Response:', userTickets);
+      console.log('🎫 Is Array?', Array.isArray(userTickets));
+      console.log('🎫 Ticket Count:', userTickets?.length);
 
       // ENSURE userTickets is an array
       if (!userTickets || !Array.isArray(userTickets)) {
-        console.log('No tickets returned or invalid format, setting empty array');
+        console.log('❌ No tickets returned or invalid format, setting empty array');
         setTickets([]);
         return;
       }
@@ -107,17 +128,23 @@ export default function LiveGameScreen() {
         ...t,
         marked_numbers: t.marked_numbers || []
       }));
+      
+      console.log('✅ Processed tickets:', ticketsWithMarked.length);
+      console.log('✅ First ticket:', ticketsWithMarked[0]);
+      
       setTickets(ticketsWithMarked);
 
-      // Only set selected ticket if none selected or if previously selected one is gone
-      // But for simplicity/refresh, defaulting to first if checking fresh might be okay, 
-      // though preserving selection is better. For now, let's keep it simple: 
-      // if we have tickets and nothing selected, select first.
+      // Set first ticket as selected if we have tickets
       if (ticketsWithMarked.length > 0) {
-        setSelectedTicket(prev => prev ? ticketsWithMarked.find(t => t.id === prev.id) || ticketsWithMarked[0] : ticketsWithMarked[0]);
+        const ticketToSelect = ticketsWithMarked.find(t => t.id === selectedTicket?.id) || ticketsWithMarked[0];
+        console.log('✅ Selected ticket:', ticketToSelect.id);
+        setSelectedTicket(ticketToSelect);
+      } else {
+        console.log('⚠️ No tickets to display');
       }
-    } catch (ticketError) {
-      console.error('Error loading tickets:', ticketError);
+    } catch (ticketError: any) {
+      console.error('❌ Error loading tickets:', ticketError);
+      Alert.alert('Error', 'Failed to load tickets: ' + (ticketError?.message || 'Unknown error'));
       setTickets([]);
     }
   };
@@ -127,10 +154,11 @@ export default function LiveGameScreen() {
       const roomData = await roomAPI.getRoom(params.id);
       setRoom(roomData);
 
-      // Load user's tickets
+      // Load user's tickets - ALWAYS load on mount
       await loadTickets();
     } catch (error) {
       console.error('Error loading game:', error);
+      Alert.alert('Error', 'Failed to load game data');
     }
   };
 
@@ -153,6 +181,7 @@ export default function LiveGameScreen() {
     socketService.on('game_ended', handleGameEnded);
     socketService.on('game_completed', handleGameCompleted); // Graceful completion
     socketService.on('ticket_updated', handleTicketUpdated); // Auto-marking
+    socketService.on('ticket_purchased', handleTicketPurchased); // New ticket purchased
   };
 
   const cleanupSocketListeners = () => {
@@ -164,6 +193,7 @@ export default function LiveGameScreen() {
     socketService.off('game_ended');
     socketService.off('game_completed');
     socketService.off('ticket_updated');
+    socketService.off('ticket_purchased');
   };
 
   const handleGameCompleted = (data: any) => {
@@ -202,6 +232,29 @@ export default function LiveGameScreen() {
           ? { ...prev, marked_numbers: data.ticket.marked_numbers || [] }
           : prev
       );
+    }
+  };
+
+  const handleTicketPurchased = (data: any) => {
+    console.log('Ticket purchased:', data);
+    // Only add ticket if it belongs to current user
+    if (data.user_id === user?.id && data.ticket) {
+      const newTicket = {
+        ...data.ticket,
+        marked_numbers: data.ticket.marked_numbers || []
+      };
+      
+      setTickets((prevTickets) => {
+        // Check if ticket already exists
+        const exists = prevTickets.some(t => t.id === newTicket.id);
+        if (exists) {
+          return prevTickets;
+        }
+        return [...prevTickets, newTicket];
+      });
+
+      // Set as selected ticket if no ticket is currently selected
+      setSelectedTicket((prev) => prev || newTicket);
     }
   };
 
@@ -299,14 +352,94 @@ export default function LiveGameScreen() {
       prevTickets.map((ticket) => {
         const hasNumber = ticket.grid.some((row) => row.includes(number));
         if (hasNumber && !ticket.marked_numbers.includes(number)) {
+          const newMarkedNumbers = [...ticket.marked_numbers, number];
+          
+          // Check for automatic wins after marking
+          setTimeout(() => checkAutoWin(ticket, newMarkedNumbers), 500);
+          
           return {
             ...ticket,
-            marked_numbers: [...ticket.marked_numbers, number],
+            marked_numbers: newMarkedNumbers,
           };
         }
         return ticket;
       })
     );
+  };
+
+  const checkAutoWin = (ticket: Ticket, markedNumbers: number[]) => {
+    if (!room) return;
+
+    const prizes = room.prizes || [];
+    
+    for (const prize of prizes) {
+      const prizeType = prize.prize_type;
+      
+      // Check if already won this prize
+      const alreadyWon = winners.some(w => 
+        w.prize_type === prizeType && ticket.id === selectedTicket?.id
+      );
+      
+      if (alreadyWon) continue;
+      
+      // Check if this prize pattern is complete
+      const isWin = checkWinPattern(ticket, markedNumbers, prizeType);
+      
+      if (isWin) {
+        console.log('🎉 AUTO WIN DETECTED:', prizeType);
+        Alert.alert(
+          '🎉 Winner! 🎉',
+          `You completed ${prizeType.replace('_', ' ').toUpperCase()}!\n\nDo you want to claim this prize?`,
+          [
+            { text: 'Later', style: 'cancel' },
+            {
+              text: 'Claim Now',
+              onPress: () => handleClaimPrize(prizeType)
+            }
+          ]
+        );
+        break; // Only alert for one prize at a time
+      }
+    }
+  };
+
+  const checkWinPattern = (ticket: Ticket, marked: number[], prizeType: string): boolean => {
+    const grid = ticket.grid;
+
+    switch (prizeType) {
+      case 'early_five':
+        return marked.length >= 5;
+
+      case 'top_line':
+        const topLine = grid[0].filter((n) => n !== null);
+        return topLine.every((n) => marked.includes(n!));
+
+      case 'middle_line':
+        const middleLine = grid[1].filter((n) => n !== null);
+        return middleLine.every((n) => marked.includes(n!));
+
+      case 'bottom_line':
+        const bottomLine = grid[2].filter((n) => n !== null);
+        return bottomLine.every((n) => marked.includes(n!));
+
+      case 'four_corners':
+        const corners = [
+          grid[0].find((n) => n !== null),
+          grid[0].reverse().find((n) => n !== null),
+          grid[2].find((n) => n !== null),
+          grid[2].reverse().find((n) => n !== null),
+        ].filter((n) => n !== null);
+        grid[0].reverse();
+        grid[2].reverse();
+        return corners.length === 4 && corners.every((n) => marked.includes(n!));
+
+      case 'full_house':
+        const allNumbers = grid.flat().filter((n) => n !== null);
+        return allNumbers.every((n) => marked.includes(n!));
+
+      default:
+        return false;
+    }
   };
 
   const handleCallNumber = () => {
@@ -671,12 +804,39 @@ export default function LiveGameScreen() {
           </View>
 
           {/* My Ticket */}
-          {selectedTicket && (
+          {tickets.length === 0 ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>My Tickets</Text>
+              <View style={styles.noTicketCard}>
+                <MaterialCommunityIcons name="ticket-outline" size={48} color="#FFD700" />
+                <Text style={styles.noTicketText}>No tickets purchased</Text>
+                <Text style={styles.noTicketSubtext}>
+                  You need to purchase tickets to play
+                </Text>
+                <TouchableOpacity
+                  style={styles.buyTicketButton}
+                  onPress={() => {
+                    Alert.alert(
+                      'Purchase Tickets',
+                      'Please go back to the room lobby to purchase tickets before the game starts',
+                      [
+                        { text: 'OK' },
+                        { text: 'Go Back', onPress: () => router.back() }
+                      ]
+                    );
+                  }}
+                >
+                  <MaterialCommunityIcons name="cart" size={20} color="#FFF" />
+                  <Text style={styles.buyTicketButtonText}>Buy Tickets</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : selectedTicket ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>My Ticket</Text>
               {renderTicket(selectedTicket)}
             </View>
-          )}
+          ) : null}
         </ScrollView>
 
         {/* Claim Prize Modal */}
@@ -744,13 +904,32 @@ export default function LiveGameScreen() {
         >
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>My Tickets</Text>
-              <FlatList
-                data={tickets}
-                renderItem={({ item }) => renderTicket(item)}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.ticketsList}
-              />
+              <Text style={styles.modalTitle}>My Tickets ({tickets.length})</Text>
+              
+              {tickets.length === 0 ? (
+                <View style={styles.noTicketsContainer}>
+                  <MaterialCommunityIcons name="ticket-outline" size={64} color="#999" />
+                  <Text style={styles.noTicketsText}>No tickets yet</Text>
+                  <Text style={styles.noTicketsSubtext}>
+                    Purchase tickets from the room lobby before the game starts
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.reloadButton}
+                    onPress={loadTickets}
+                  >
+                    <MaterialCommunityIcons name="refresh" size={20} color="#FFF" />
+                    <Text style={styles.reloadButtonText}>Reload Tickets</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <FlatList
+                  data={tickets}
+                  renderItem={({ item }) => renderTicket(item)}
+                  keyExtractor={(item) => item.id}
+                  contentContainerStyle={styles.ticketsList}
+                />
+              )}
+              
               <TouchableOpacity
                 style={styles.modalCloseButton}
                 onPress={() => setShowTicketModal(false)}
@@ -1181,6 +1360,74 @@ const styles = StyleSheet.create({
   noWinnersText: {
     fontSize: 16,
     color: '#999',
+  },
+  noTicketsContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noTicketsText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#666',
+    marginTop: 16,
+  },
+  noTicketsSubtext: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  reloadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#4ECDC4',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  reloadButtonText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  noTicketCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFD700',
+    borderStyle: 'dashed',
+  },
+  noTicketText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFD700',
+    marginTop: 16,
+  },
+  noTicketSubtext: {
+    fontSize: 14,
+    color: '#FFF',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  buyTicketButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FF6B35',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  buyTicketButtonText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#FFF',
   },
   modalCloseButton: {
     backgroundColor: '#1a5f1a',

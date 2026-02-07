@@ -81,29 +81,61 @@ class SocketService {
     if (!this.socket) return;
 
     this.socket.on('connect', () => {
-      console.log('Socket connected:', this.socket?.id);
+      console.log('✅ Socket connected:', this.socket?.id);
+      this.reconnectAttempts = 0;
 
       // Authenticate
       if (this.userId) {
         this.socket?.emit('authenticate', { user_id: this.userId });
       }
+
+      // Rejoin room if we were in one
+      if (this.currentRoom) {
+        console.log('🔄 Rejoining room:', this.currentRoom);
+        this.socket?.emit('join_room', { room_id: this.currentRoom });
+      }
     });
 
-    this.socket.on('disconnect', () => {
-      console.log('Socket disconnected');
+    this.socket.on('disconnect', (reason) => {
+      console.log('❌ Socket disconnected:', reason);
+      
+      // Auto-reconnect if not a manual disconnect
+      if (reason === 'io server disconnect') {
+        // Server disconnected, try to reconnect
+        this.socket?.connect();
+      }
+    });
+
+    this.socket.on('connect_error', (error: any) => {
+      console.error('❌ Socket connection error:', error);
+      this.reconnectAttempts++;
+      
+      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+        console.error('❌ Max reconnection attempts reached');
+      }
     });
 
     this.socket.on('error', (error: any) => {
-      console.error('Socket error:', error);
+      console.error('❌ Socket error:', error);
     });
 
     this.socket.on('authenticated', (data: any) => {
-      console.log('Socket authenticated:', data);
+      console.log('✅ Socket authenticated:', data);
+    });
+
+    this.socket.on('room_joined', (data: any) => {
+      console.log('✅ Room joined:', data);
     });
 
     // Game completion listener
     this.socket.on('game_completed', (data: any) => {
-      console.log('Game completed:', data);
+      console.log('🎮 Game completed:', data);
+      // This will be handled by the game screen component
+    });
+
+    // Ticket purchased listener
+    this.socket.on('ticket_purchased', (data: any) => {
+      console.log('🎫 Ticket purchased:', data);
       // This will be handled by the game screen component
     });
   }

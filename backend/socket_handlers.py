@@ -147,7 +147,7 @@ async def register_socket_events(sio: socketio.AsyncServer, db):
                     from server_multiplayer import generate_tambola_ticket
                     
                     # Generate ticket grid
-                    ticket_grid = generate_tambola_ticket(ticket_number)
+                    ticket_grid_data = generate_tambola_ticket(ticket_number)
                     
                     # Create ticket document
                     ticket_id = str(uuid.uuid4())
@@ -156,13 +156,22 @@ async def register_socket_events(sio: socketio.AsyncServer, db):
                         "room_id": room_id,
                         "user_id": user_id,
                         "ticket_number": ticket_number,
-                        "grid": ticket_grid,
+                        "grid": ticket_grid_data["grid"],
+                        "numbers": ticket_grid_data["numbers"],
                         "marked_numbers": [],  # Empty array for marking
                         "created_at": datetime.utcnow()
                     }
                     
                     await db.tickets.insert_one(new_ticket)
                     logger.info(f"Auto-generated ticket {ticket_id} for user {user_id} in room {room_id}")
+                    
+                    # Emit ticket_purchased event to notify the user
+                    serialized_ticket = serialize_doc(new_ticket)
+                    await sio.emit('ticket_purchased', {
+                        'room_id': room_id,
+                        'ticket': serialized_ticket,
+                        'user_id': user_id
+                    }, room=room_id)
                 
                 # Serialize room data to remove ObjectId
                 serialized_room = serialize_doc(room)

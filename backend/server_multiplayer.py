@@ -994,14 +994,15 @@ async def buy_tickets(
         for i in range(quantity):
             ticket_id = str(uuid.uuid4())
             ticket_number = await db.tickets.count_documents({"room_id": room_id}) + 1
-            ticket_grid = generate_tambola_ticket(ticket_number)
+            ticket_grid_data = generate_tambola_ticket(ticket_number)
             
             new_ticket = {
                 "id": ticket_id,
                 "room_id": room_id,
                 "user_id": current_user["id"],
                 "ticket_number": ticket_number,
-                "grid": ticket_grid,
+                "grid": ticket_grid_data["grid"],  # Use grid from generated data
+                "numbers": ticket_grid_data["numbers"],  # Include numbers array
                 "marked_numbers": [],
                 "created_at": datetime.utcnow()
             }
@@ -1010,6 +1011,14 @@ async def buy_tickets(
             tickets_created.append(serialize_doc(new_ticket))
         
         logger.info(f"User {current_user['id']} bought {quantity} tickets for room {room_id}")
+        
+        # Emit socket event for each ticket purchased
+        for ticket in tickets_created:
+            await sio.emit('ticket_purchased', {
+                'room_id': room_id,
+                'ticket': ticket,
+                'user_id': current_user['id']
+            }, room=room_id)
         
         return {
             "message": f"Successfully purchased {quantity} ticket(s)",

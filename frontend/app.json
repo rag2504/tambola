@@ -7,9 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "frontend",
     "updates": {
-      "enabled": false,
-      "fallbackToCacheTimeout": 0,
-      "checkAutomatically": "ON_ERROR"
+      "fallbackToCacheTimeout": 0
     },
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -75,6 +73,10 @@
       }
     },
 
-    "owner": "rag2504s-organization"
+    "owner": "rag2504s-organization",
+    
+    "runtimeVersion": {
+      "policy": "nativeVersion"
+    }
   }
 }

@@ -100,6 +100,12 @@ class SocketService {
     this.socket.on('authenticated', (data: any) => {
       console.log('Socket authenticated:', data);
     });
+
+    // Game completion listener
+    this.socket.on('game_completed', (data: any) => {
+      console.log('Game completed:', data);
+      // This will be handled by the game screen component
+    });
   }
 
   /**

@@ -91,9 +91,14 @@ export default function LiveGameScreen() {
       // Load user's tickets
       try {
         const userTickets = await ticketAPI.getMyTickets(params.id);
-        setTickets(userTickets);
-        if (userTickets.length > 0) {
-          setSelectedTicket(userTickets[0]);
+        // ENSURE marked_numbers is always initialized
+        const ticketsWithMarked = userTickets.map((t: any) => ({
+          ...t,
+          marked_numbers: t.marked_numbers || []
+        }));
+        setTickets(ticketsWithMarked);
+        if (ticketsWithMarked.length > 0) {
+          setSelectedTicket(ticketsWithMarked[0]);
         }
       } catch (ticketError) {
         console.error('Error loading tickets:', ticketError);
@@ -122,6 +127,8 @@ export default function LiveGameScreen() {
     socketService.on('game_started', handleGameStarted);
     socketService.on('game_paused', handleGamePaused);
     socketService.on('game_ended', handleGameEnded);
+    socketService.on('game_completed', handleGameCompleted); // Graceful completion
+    socketService.on('ticket_updated', handleTicketUpdated); // Auto-marking
   };
 
   const cleanupSocketListeners = () => {
@@ -131,6 +138,47 @@ export default function LiveGameScreen() {
     socketService.off('game_started');
     socketService.off('game_paused');
     socketService.off('game_ended');
+    socketService.off('game_completed');
+    socketService.off('ticket_updated');
+  };
+
+  const handleGameCompleted = (data: any) => {
+    console.log('Game completed gracefully:', data);
+    setGameEnded(true);
+    setWinners(data.winners || []);
+    setShowWinnersModal(true);
+
+    // Stop auto-calling
+    if (autoCallInterval.current) {
+      clearInterval(autoCallInterval.current);
+      autoCallInterval.current = null;
+    }
+    setAutoCall(false);
+
+    if (soundEnabled) {
+      Speech.speak('Game Complete! Congratulations to all winners!', { rate: 0.9 });
+    }
+  };
+
+  const handleTicketUpdated = (data: any) => {
+    console.log('Ticket updated:', data);
+    // Update local ticket state with server-marked numbers
+    if (data.ticket) {
+      setTickets((prevTickets) =>
+        prevTickets.map((ticket) =>
+          ticket.id === data.ticket.id
+            ? { ...ticket, marked_numbers: data.ticket.marked_numbers || [] }
+            : ticket
+        )
+      );
+
+      // Update selected ticket if it's the one that was updated
+      setSelectedTicket((prev) =>
+        prev && prev.id === data.ticket.id
+          ? { ...prev, marked_numbers: data.ticket.marked_numbers || [] }
+          : prev
+      );
+    }
   };
 
   const handleGameStarted = (data: any) => {
@@ -152,7 +200,7 @@ export default function LiveGameScreen() {
       if (!prev) return prev;
       return { ...prev, is_paused: data.is_paused };
     });
-    
+
     if (data.is_paused) {
       // Stop auto-calling if active
       if (autoCallInterval.current) {
@@ -171,14 +219,14 @@ export default function LiveGameScreen() {
     setGameEnded(true);
     setWinners(data.winners || []);
     setShowWinnersModal(true);
-    
+
     // Stop auto-calling
     if (autoCallInterval.current) {
       clearInterval(autoCallInterval.current);
       autoCallInterval.current = null;
     }
     setAutoCall(false);
-    
+
     if (soundEnabled) {
       Speech.speak('Game Over! All numbers have been called.', { rate: 0.9 });
     }
@@ -252,7 +300,7 @@ export default function LiveGameScreen() {
 
   const toggleAutoCall = () => {
     if (!room) return;
-    
+
     if (room.is_paused) {
       Alert.alert('Game Paused', 'Cannot start auto-call while game is paused');
       return;
@@ -451,8 +499,8 @@ export default function LiveGameScreen() {
                     styles.ticketCell,
                     cell !== null && styles.ticketCellFilled,
                     cell !== null &&
-                      ticket.marked_numbers.includes(cell) &&
-                      styles.ticketCellMarked,
+                    ticket.marked_numbers.includes(cell) &&
+                    styles.ticketCellMarked,
                     cell === room?.current_number && styles.ticketCellCurrent,
                   ]}
                   onPress={() => cell !== null && handleManualMark(cell)}
@@ -463,7 +511,7 @@ export default function LiveGameScreen() {
                       style={[
                         styles.ticketCellText,
                         ticket.marked_numbers.includes(cell) &&
-                          styles.ticketCellTextMarked,
+                        styles.ticketCellTextMarked,
                       ]}
                     >
                       {cell}

@@ -375,6 +375,23 @@ async def create_room(
     current_user: dict = Depends(get_current_user)
 ):
     """Create a new game room"""
+    
+    # FIX: Convert prize_type strings to enum
+    # Frontend sends strings like "early_five", backend needs PrizeType enum
+    fixed_prizes = []
+    for prize in room_data.prizes:
+        prize_dict = prize.dict() if hasattr(prize, 'dict') else prize
+        
+        # Convert string to enum if needed
+        if isinstance(prize_dict.get('prize_type'), str):
+            try:
+                prize_dict['prize_type'] = PrizeType(prize_dict['prize_type'])
+            except ValueError:
+                # Try uppercase conversion
+                prize_dict['prize_type'] = PrizeType[prize_dict['prize_type'].upper()]
+        
+        fixed_prizes.append(PrizeConfig(**prize_dict))
+    
     room = Room(
         name=room_data.name,
         host_id=current_user["id"],
@@ -384,7 +401,7 @@ async def create_room(
         max_players=room_data.max_players,
         min_players=room_data.min_players,
         auto_start=room_data.auto_start,
-        prizes=room_data.prizes,
+        prizes=fixed_prizes,  # Use fixed prizes with enum
         password=room_data.password
     )
     
@@ -393,7 +410,8 @@ async def create_room(
     logger.info(f"Room created: {room.id} by {current_user['name']}")
     
     # Broadcast new room to all connected clients
-    await sio.emit('new_room', room.dict())
+    serialized_room = serialize_doc(room.dict())
+    await sio.emit('new_room', serialized_room)
     
     return room
 

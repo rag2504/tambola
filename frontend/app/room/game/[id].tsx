@@ -110,42 +110,40 @@ export default function LiveGameScreen() {
   const loadTickets = async () => {
     try {
       console.log('🎫 Loading tickets for room:', params.id);
-      const userTickets = await ticketAPI.getMyTickets(params.id);
-      
-      console.log('🎫 API Response:', userTickets);
-      console.log('🎫 Is Array?', Array.isArray(userTickets));
-      console.log('🎫 Ticket Count:', userTickets?.length);
+      const res = await ticketAPI.getMyTickets(params.id);
 
-      // ENSURE userTickets is an array
-      if (!userTickets || !Array.isArray(userTickets)) {
-        console.log('❌ No tickets returned or invalid format, setting empty array');
-        setTickets([]);
+      // API failure — preserve socket tickets, never clear
+      if (res?.success === false) {
+        console.log('API failed — preserving socket tickets');
         return;
       }
+
+      if (!Array.isArray(res)) {
+        console.log('⚠️ API tickets failed — keeping existing tickets');
+        return;
+      }
+
+      const userTickets = res;
+      console.log('🎫 Ticket Count:', userTickets?.length);
 
       // ENSURE marked_numbers is always initialized
       const ticketsWithMarked = userTickets.map((t: any) => ({
         ...t,
         marked_numbers: t.marked_numbers || []
       }));
-      
+
       console.log('✅ Processed tickets:', ticketsWithMarked.length);
-      console.log('✅ First ticket:', ticketsWithMarked[0]);
-      
       setTickets(ticketsWithMarked);
 
       // Set first ticket as selected if we have tickets
       if (ticketsWithMarked.length > 0) {
         const ticketToSelect = ticketsWithMarked.find(t => t.id === selectedTicket?.id) || ticketsWithMarked[0];
-        console.log('✅ Selected ticket:', ticketToSelect.id);
         setSelectedTicket(ticketToSelect);
-      } else {
-        console.log('⚠️ No tickets to display');
       }
     } catch (ticketError: any) {
       console.error('❌ Error loading tickets:', ticketError);
       Alert.alert('Error', 'Failed to load tickets: ' + (ticketError?.message || 'Unknown error'));
-      setTickets([]);
+      // Do NOT clear tickets — preserve socket tickets on API error
     }
   };
 
@@ -260,33 +258,23 @@ export default function LiveGameScreen() {
 
   const handleGameStarted = (data: any) => {
     console.log('🎮 Game started:', data);
-    
-    // Load tickets from game_started event
-    if (data.tickets) {
-      const myTickets = data.tickets.filter((t: any) => t.user_id === user?.id);
-      console.log('✅ Got tickets from game_started event:', myTickets.length);
-      console.log('✅ My tickets:', myTickets);
-      
-      // Ensure marked_numbers is initialized
+
+    // Game start event must set tickets — socket is source of truth
+    if (Array.isArray(data.tickets)) {
+      const currentUserId = user?.id;
+      const myTickets = data.tickets.filter(
+        (t: any) => t.user_id === currentUserId
+      );
       const ticketsWithMarked = myTickets.map((t: any) => ({
         ...t,
         marked_numbers: t.marked_numbers || []
       }));
-      
-      console.log('✅ Setting tickets to state:', ticketsWithMarked);
       setTickets(ticketsWithMarked);
-      
       if (ticketsWithMarked.length > 0) {
         setSelectedTicket(ticketsWithMarked[0]);
-        console.log('✅ Selected first ticket:', ticketsWithMarked[0].id);
-        console.log('✅ Ticket grid:', ticketsWithMarked[0].grid);
-      } else {
-        console.log('⚠️ No tickets for current user');
       }
-    } else {
-      console.log('⚠️ No tickets in game_started event');
     }
-    
+
     Alert.alert('Game Started!', 'The game has begun. Good luck!');
   };
 

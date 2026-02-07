@@ -14,6 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../../contexts/AuthContext';
 import { roomAPI, ticketAPI, gameAPI } from '../../../services/api';
 import { socketService } from '../../../services/socket';
@@ -77,11 +78,49 @@ export default function LiveGameScreen() {
     };
   }, []);
 
+  // Reload tickets when screen comes into focus (e.g., after buying tickets)
+  useFocusEffect(
+    React.useCallback(() => {
+      loadTickets();
+    }, [params.id])
+  );
+
   useEffect(() => {
     if (room?.current_number && soundEnabled) {
       Speech.speak(String(room.current_number), { rate: 0.9 });
     }
   }, [room?.current_number, soundEnabled]);
+
+  const loadTickets = async () => {
+    try {
+      const userTickets = await ticketAPI.getMyTickets(params.id);
+
+      // ENSURE userTickets is an array
+      if (!userTickets || !Array.isArray(userTickets)) {
+        console.log('No tickets returned or invalid format, setting empty array');
+        setTickets([]);
+        return;
+      }
+
+      // ENSURE marked_numbers is always initialized
+      const ticketsWithMarked = userTickets.map((t: any) => ({
+        ...t,
+        marked_numbers: t.marked_numbers || []
+      }));
+      setTickets(ticketsWithMarked);
+
+      // Only set selected ticket if none selected or if previously selected one is gone
+      // But for simplicity/refresh, defaulting to first if checking fresh might be okay, 
+      // though preserving selection is better. For now, let's keep it simple: 
+      // if we have tickets and nothing selected, select first.
+      if (ticketsWithMarked.length > 0) {
+        setSelectedTicket(prev => prev ? ticketsWithMarked.find(t => t.id === prev.id) || ticketsWithMarked[0] : ticketsWithMarked[0]);
+      }
+    } catch (ticketError) {
+      console.error('Error loading tickets:', ticketError);
+      setTickets([]);
+    }
+  };
 
   const loadGameData = async () => {
     try {
@@ -89,30 +128,7 @@ export default function LiveGameScreen() {
       setRoom(roomData);
 
       // Load user's tickets
-      try {
-        const userTickets = await ticketAPI.getMyTickets(params.id);
-
-        // ENSURE userTickets is an array
-        if (!userTickets || !Array.isArray(userTickets)) {
-          console.log('No tickets returned or invalid format, setting empty array');
-          setTickets([]);
-          return;
-        }
-
-        // ENSURE marked_numbers is always initialized
-        const ticketsWithMarked = userTickets.map((t: any) => ({
-          ...t,
-          marked_numbers: t.marked_numbers || []
-        }));
-        setTickets(ticketsWithMarked);
-        if (ticketsWithMarked.length > 0) {
-          setSelectedTicket(ticketsWithMarked[0]);
-        }
-      } catch (ticketError) {
-        console.error('Error loading tickets:', ticketError);
-        // If no tickets, show empty state
-        setTickets([]);
-      }
+      await loadTickets();
     } catch (error) {
       console.error('Error loading game:', error);
     }

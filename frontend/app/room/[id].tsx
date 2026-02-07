@@ -9,13 +9,14 @@ import {
   ActivityIndicator,
   Share as RNShare,
   Platform,
+  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
-import { roomAPI } from '../../services/api';
+import { roomAPI, ticketAPI } from '../../services/api';
 import { socketService } from '../../services/socket';
 
 interface Room {
@@ -52,6 +53,11 @@ export default function RoomScreen() {
   const [loading, setLoading] = useState(true);
   const joinCalledRef = useRef(false);
   const [isSharing, setIsSharing] = useState(false);
+
+  // Buy ticket state
+  const [showBuyModal, setShowBuyModal] = useState(false);
+  const [ticketQuantity, setTicketQuantity] = useState(1);
+  const [buying, setBuying] = useState(false);
 
   useEffect(() => {
     loadRoom();
@@ -173,6 +179,35 @@ export default function RoomScreen() {
     );
   };
 
+  const handleBuyTickets = async () => {
+    if (!room) return;
+
+    setBuying(true);
+    try {
+      const totalCost = room.ticket_price * ticketQuantity;
+
+      await ticketAPI.buyTickets(params.id, ticketQuantity);
+
+      Alert.alert(
+        'Success!',
+        `You have purchased ${ticketQuantity} ticket(s) for ₹${totalCost}`,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              setShowBuyModal(false);
+              setTicketQuantity(1);
+            },
+          },
+        ]
+      );
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to purchase tickets');
+    } finally {
+      setBuying(false);
+    }
+  };
+
   const handleShareRoom = async () => {
     if (!room || isSharing) return;
 
@@ -281,6 +316,17 @@ export default function RoomScreen() {
                 <Text style={styles.roomCodeHint}>Share this code with friends</Text>
               </View>
             )}
+
+            {/* Buy Tickets Button */}
+            {room.status === 'waiting' && (
+              <TouchableOpacity
+                style={styles.buyTicketButton}
+                onPress={() => setShowBuyModal(true)}
+              >
+                <MaterialCommunityIcons name="ticket-confirmation" size={24} color="#1a5f1a" />
+                <Text style={styles.buyTicketButtonText}>Buy More Tickets</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Players */}
@@ -366,6 +412,73 @@ export default function RoomScreen() {
             </View>
           )}
         </View>
+
+        {/* Buy Tickets Modal */}
+        <Modal
+          visible={showBuyModal}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowBuyModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Buy Tickets</Text>
+              <Text style={styles.modalSubtitle}>
+                Ticket Price: ₹{room?.ticket_price || 0}
+              </Text>
+
+              <View style={styles.quantitySelector}>
+                <TouchableOpacity
+                  style={styles.quantityButton}
+                  onPress={() => setTicketQuantity(Math.max(1, ticketQuantity - 1))}
+                >
+                  <MaterialCommunityIcons name="minus" size={24} color="#FFD700" />
+                </TouchableOpacity>
+
+                <Text style={styles.quantityText}>{ticketQuantity}</Text>
+
+                <TouchableOpacity
+                  style={styles.quantityButton}
+                  onPress={() => setTicketQuantity(Math.min(10, ticketQuantity + 1))}
+                >
+                  <MaterialCommunityIcons name="plus" size={24} color="#FFD700" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.totalCostContainer}>
+                <Text style={styles.totalCostLabel}>Total Cost:</Text>
+                <Text style={styles.totalCostValue}>
+                  ₹{(room?.ticket_price || 0) * ticketQuantity}
+                </Text>
+              </View>
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalCancelButton]}
+                  onPress={() => {
+                    setShowBuyModal(false);
+                    setTicketQuantity(1);
+                  }}
+                  disabled={buying}
+                >
+                  <Text style={styles.modalCancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalConfirmButton]}
+                  onPress={handleBuyTickets}
+                  disabled={buying}
+                >
+                  {buying ? (
+                    <ActivityIndicator color="#1a5f1a" />
+                  ) : (
+                    <Text style={styles.modalConfirmButtonText}>Purchase</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -570,5 +683,123 @@ const styles = StyleSheet.create({
   waitingFooterText: {
     fontSize: 14,
     color: '#FFD700',
+  },
+  // Buy Ticket Button Styles
+  buyTicketButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFD700',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    marginTop: 16,
+    gap: 8,
+  },
+  buyTicketButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1a5f1a',
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#1a5f1a',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    borderWidth: 2,
+    borderColor: '#FFD700',
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFD700',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#FFF',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  quantitySelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 24,
+    marginBottom: 24,
+  },
+  quantityButton: {
+    backgroundColor: 'rgba(255, 215, 0, 0.2)',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#FFD700',
+  },
+  quantityText: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#FFD700',
+    minWidth: 60,
+    textAlign: 'center',
+  },
+  totalCostContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#FFD700',
+  },
+  totalCostLabel: {
+    fontSize: 16,
+    color: '#FFF',
+    fontWeight: '600',
+  },
+  totalCostValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFD700',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: '#FFD700',
+  },
+  modalCancelButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFD700',
+  },
+  modalConfirmButton: {
+    backgroundColor: '#FFD700',
+  },
+  modalConfirmButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1a5f1a',
   },
 });

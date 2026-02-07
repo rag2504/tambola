@@ -260,14 +260,25 @@ export default function LiveGameScreen() {
 
   const handleGameStarted = (data: any) => {
     console.log('Game started:', data);
-    // Load tickets if they were just generated
+    
+    // Load tickets from game_started event
     if (data.tickets) {
       const myTickets = data.tickets.filter((t: any) => t.user_id === user?.id);
-      setTickets(myTickets);
-      if (myTickets.length > 0) {
-        setSelectedTicket(myTickets[0]);
+      console.log('✅ Got tickets from game_started event:', myTickets.length);
+      
+      // Ensure marked_numbers is initialized
+      const ticketsWithMarked = myTickets.map((t: any) => ({
+        ...t,
+        marked_numbers: t.marked_numbers || []
+      }));
+      
+      setTickets(ticketsWithMarked);
+      if (ticketsWithMarked.length > 0) {
+        setSelectedTicket(ticketsWithMarked[0]);
+        console.log('✅ Selected first ticket:', ticketsWithMarked[0].id);
       }
     }
+    
     Alert.alert('Game Started!', 'The game has begun. Good luck!');
   };
 

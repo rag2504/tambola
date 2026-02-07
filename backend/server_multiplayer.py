@@ -268,6 +268,29 @@ async def signup(user_data: UserCreate):
     
     await db.users.insert_one(user.dict())
     
+    # Create wallet with ₹500 initial balance
+    wallet_id = str(uuid.uuid4())
+    wallet = {
+        "id": wallet_id,
+        "user_id": user.id,
+        "balance": 500.0,  # ₹500 initial balance
+        "created_at": datetime.utcnow()
+    }
+    await db.wallets.insert_one(wallet)
+    
+    # Create initial transaction record
+    transaction_id = str(uuid.uuid4())
+    await db.transactions.insert_one({
+        "id": transaction_id,
+        "user_id": user.id,
+        "type": "credit",
+        "amount": 500.0,
+        "description": "Welcome bonus - Initial wallet balance",
+        "created_at": datetime.utcnow()
+    })
+    
+    logger.info(f"Created new user {user.id} with ₹500 welcome bonus")
+    
     # Create token
     token = create_user_token(user.id, user.email)
     

@@ -73,9 +73,11 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
       }
       // 5xx and other errors – return instead of throw so callers can handle
       if (response.status >= 500) {
-        return { success: false, message: data?.message || 'Server error. Try again later.' };
+        const msg = data?.detail ?? data?.message ?? 'Server error. Try again later.';
+        return { success: false, message: typeof msg === 'string' ? msg : 'Server error. Try again later.' };
       }
-      throw new Error((data && data.message) || `Server Error (${response.status})`);
+      const errMsg = data?.detail ?? data?.message ?? `Server Error (${response.status})`;
+      throw new Error(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
     }
 
     return data;

@@ -3,6 +3,7 @@ Enhanced FastAPI Server with Multiplayer Features
 """
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 import os
@@ -73,6 +74,34 @@ api_router = APIRouter(prefix="/api")
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _safe_detail(e: Exception) -> str:
+    """Return a safe user-facing message; avoid exposing internals."""
+    msg = str(e).strip() or "Internal server error"
+    if "MONGO" in msg.upper() or "connection" in msg.lower() or "pymongo" in msg.lower():
+        return "Database temporarily unavailable. Please try again."
+    if len(msg) > 200:
+        return "Something went wrong. Please try again."
+    return msg
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc: Exception):
+    """Return JSON for unhandled errors so clients never see plain HTML 500."""
+    from fastapi import HTTPException as FastAPIHTTPException
+    if isinstance(exc, FastAPIHTTPException):
+        d = exc.detail
+        msg = d if isinstance(d, str) else (d[0].get("msg", str(d)) if isinstance(d, list) and d and isinstance(d[0], dict) else str(d))
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": d, "message": msg},
+        )
+    logger.exception("Unhandled error: %s", exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": _safe_detail(exc), "message": _safe_detail(exc)},
+    )
 
 
 # ============= SERIALIZATION HELPER =============
@@ -242,112 +271,126 @@ def validate_win(ticket: dict, called_numbers: List[int], prize_type: PrizeType)
 @api_router.post("/auth/signup", response_model=Token)
 async def signup(user_data: UserCreate):
     """Register a new user"""
-    # Check if user exists
-    existing_user = await db.users.find_one({"email": user_data.email})
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
+    try:
+        existing_user = await db.users.find_one({"email": user_data.email})
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+
+        existing_mobile = await db.users.find_one({"mobile": user_data.mobile})
+        if existing_mobile:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Mobile number already registered"
+            )
+
+        user = User(
+            name=user_data.name,
+            email=user_data.email,
+            mobile=user_data.mobile,
+            password_hash=get_password_hash(user_data.password),
+            wallet_balance=500.0,
         )
-    
-    # Check mobile
-    existing_mobile = await db.users.find_one({"mobile": user_data.mobile})
-    if existing_mobile:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Mobile number already registered"
+        user_dict = user.dict()
+        await db.users.insert_one(user_dict)
+
+        try:
+            wallet_id = str(uuid.uuid4())
+            await db.wallets.insert_one({
+                "id": wallet_id,
+                "user_id": user.id,
+                "balance": 500.0,
+                "created_at": datetime.utcnow(),
+            })
+        except Exception as we:
+            logger.warning("Wallet insert failed (user already created): %s", we)
+
+        try:
+            await db.transactions.insert_one({
+                "id": str(uuid.uuid4()),
+                "user_id": user.id,
+                "type": "credit",
+                "amount": 500.0,
+                "description": "Welcome bonus - New user",
+                "balance_after": 500.0,
+                "created_at": datetime.utcnow(),
+            })
+        except Exception as te:
+            logger.warning("Transaction insert failed: %s", te)
+
+        logger.info("Created new user %s with welcome bonus", user.id)
+
+        token = create_user_token(user.id, user.email)
+        profile = UserProfile(
+            id=user.id,
+            name=user.name,
+            email=user.email,
+            mobile=user.mobile,
+            profile_pic=user.profile_pic,
+            wallet_balance=500.0,
+            total_games=user.total_games,
+            total_wins=user.total_wins,
+            total_winnings=user.total_winnings,
+            created_at=user.created_at,
         )
-    
-    # Create user with ₹500 new user bonus (wallet_balance on user doc)
-    user = User(
-        name=user_data.name,
-        email=user_data.email,
-        mobile=user_data.mobile,
-        password_hash=get_password_hash(user_data.password),
-        wallet_balance=500.0,
-    )
-    user_dict = user.dict()
-    await db.users.insert_one(user_dict)
-
-    # Create wallet record for consistency (optional; balance lives on user doc)
-    wallet_id = str(uuid.uuid4())
-    await db.wallets.insert_one({
-        "id": wallet_id,
-        "user_id": user.id,
-        "balance": 500.0,
-        "created_at": datetime.utcnow(),
-    })
-
-    await db.transactions.insert_one({
-        "id": str(uuid.uuid4()),
-        "user_id": user.id,
-        "type": "credit",
-        "amount": 500.0,
-        "description": "Welcome bonus - New user",
-        "balance_after": 500.0,
-        "created_at": datetime.utcnow(),
-    })
-
-    logger.info(f"Created new user {user.id} with ₹500 welcome bonus")
-
-    token = create_user_token(user.id, user.email)
-    profile = UserProfile(
-        id=user.id,
-        name=user.name,
-        email=user.email,
-        mobile=user.mobile,
-        profile_pic=user.profile_pic,
-        wallet_balance=500.0,
-        total_games=user.total_games,
-        total_wins=user.total_wins,
-        total_winnings=user.total_winnings,
-        created_at=user.created_at,
-    )
-    
-    return Token(access_token=token, user=profile)
+        return Token(access_token=token, user=profile)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Signup failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=_safe_detail(e),
+        )
 
 
 @api_router.post("/auth/login", response_model=Token)
 async def login(credentials: UserLogin):
     """Login user"""
-    user = await db.users.find_one({"email": credentials.email})
-    
-    if not user or not verify_password(credentials.password, user["password_hash"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password"
+    try:
+        user = await db.users.find_one({"email": credentials.email})
+
+        if not user or not verify_password(credentials.password, user["password_hash"]):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password"
+            )
+
+        if user.get("is_banned"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account is banned"
+            )
+
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$set": {"last_login": datetime.utcnow()}}
         )
-    
-    if user.get("is_banned"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is banned"
+
+        token = create_user_token(user["id"], user["email"])
+        profile = UserProfile(
+            id=user["id"],
+            name=user["name"],
+            email=user["email"],
+            mobile=user["mobile"],
+            profile_pic=user.get("profile_pic"),
+            wallet_balance=user.get("wallet_balance", 0.0),
+            total_games=user.get("total_games", 0),
+            total_wins=user.get("total_wins", 0),
+            total_winnings=user.get("total_winnings", 0.0),
+            created_at=user["created_at"]
         )
-    
-    # Update last login
-    await db.users.update_one(
-        {"id": user["id"]},
-        {"$set": {"last_login": datetime.utcnow()}}
-    )
-    
-    # Create token
-    token = create_user_token(user["id"], user["email"])
-    
-    # Return profile
-    profile = UserProfile(
-        id=user["id"],
-        name=user["name"],
-        email=user["email"],
-        mobile=user["mobile"],
-        profile_pic=user.get("profile_pic"),
-        wallet_balance=user.get("wallet_balance", 0.0),
-        total_games=user.get("total_games", 0),
-        total_wins=user.get("total_wins", 0),
-        total_winnings=user.get("total_winnings", 0.0),
-        created_at=user["created_at"]
-    )
-    
-    return Token(access_token=token, user=profile)
+        return Token(access_token=token, user=profile)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Login failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=_safe_detail(e),
+        )
 
 
 @api_router.get("/auth/profile", response_model=UserProfile)

@@ -50,7 +50,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user]);
 
-  // Real-time wallet update from socket
+  // Real-time wallet update from socket (only register when socket is ready to avoid errors)
   useEffect(() => {
     if (!user) return;
     const handleWalletUpdated = (data: { wallet_balance?: number }) => {
@@ -67,10 +67,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         });
       }
     };
-    socketService.on('wallet_updated', handleWalletUpdated);
-    return () => {
-      socketService.off('wallet_updated', handleWalletUpdated);
+    const register = () => {
+      if (socketService.isConnected()) {
+        socketService.on('wallet_updated', handleWalletUpdated);
+        return true;
+      }
+      return false;
     };
+    if (!register()) {
+      const t = setTimeout(register, 800);
+      return () => {
+        clearTimeout(t);
+        socketService.off('wallet_updated');
+      };
+    }
+    return () => socketService.off('wallet_updated');
   }, [user?.id]);
 
   const loadUser = async () => {
@@ -90,31 +101,39 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const login = async (email: string, password: string) => {
     try {
-      const response = await authAPI.login({ email, password });
-      
-      // Save token and user data
-      await AsyncStorage.setItem('auth_token', response.access_token);
-      await AsyncStorage.setItem('user_data', JSON.stringify(response.user));
-      
-      setUser(response.user);
+      const response = await authAPI.login({ email, password }) as any;
+      if (!response || response.success === false) {
+        throw new Error(response?.message || 'Login failed');
+      }
+      const token = response.access_token;
+      const userData = response.user;
+      if (token == null || token === undefined || !userData) {
+        throw new Error(response?.message || 'Invalid login response');
+      }
+      await AsyncStorage.setItem('auth_token', String(token));
+      await AsyncStorage.setItem('user_data', JSON.stringify(userData));
+      setUser(userData);
     } catch (error: any) {
-      console.error('Login error:', error);
-      throw new Error(error.message || 'Login failed');
+      throw new Error(error?.message || 'Login failed');
     }
   };
 
   const signup = async (name: string, email: string, mobile: string, password: string) => {
     try {
-      const response = await authAPI.signup({ name, email, mobile, password });
-      
-      // Save token and user data
-      await AsyncStorage.setItem('auth_token', response.access_token);
-      await AsyncStorage.setItem('user_data', JSON.stringify(response.user));
-      
-      setUser(response.user);
+      const response = await authAPI.signup({ name, email, mobile, password }) as any;
+      if (!response || response.success === false) {
+        throw new Error(response?.message || 'Signup failed');
+      }
+      const token = response.access_token;
+      const userData = response.user;
+      if (token == null || token === undefined || !userData) {
+        throw new Error(response?.message || 'Invalid signup response');
+      }
+      await AsyncStorage.setItem('auth_token', String(token));
+      await AsyncStorage.setItem('user_data', JSON.stringify(userData));
+      setUser(userData);
     } catch (error: any) {
-      console.error('Signup error:', error);
-      throw new Error(error.message || 'Signup failed');
+      throw new Error(error?.message || 'Signup failed');
     }
   };
 
@@ -135,12 +154,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const refreshProfile = async () => {
     try {
-      const profile = await authAPI.getProfile();
-      await AsyncStorage.setItem('user_data', JSON.stringify(profile));
-      setUser(profile);
-    } catch (error) {
-      console.error('Error refreshing profile:', error);
-    }
+      const profile = await authAPI.getProfile() as any;
+      if (profile && profile.id) {
+        await AsyncStorage.setItem('user_data', JSON.stringify(profile));
+        setUser(profile);
+      }
+    } catch (_) {}
   };
 
   const updateWalletBalance = (newBalance: number) => {

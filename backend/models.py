@@ -41,7 +41,7 @@ class PrizeType(str, Enum):
 class UserCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=50)
     email: EmailStr
-    mobile: str = Field(..., pattern=r'^\+?[1-9]\d{9,14}$')
+    mobile: str = Field(..., min_length=10, max_length=20)  # Allow 10–20 chars so + and country codes work
     password: str = Field(..., min_length=6)
 
 

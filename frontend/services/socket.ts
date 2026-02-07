@@ -254,11 +254,7 @@ class SocketService {
    * Listen to an event
    */
   on(event: string, callback: (data: any) => void) {
-    if (!this.socket) {
-      console.error('Socket not initialized');
-      return;
-    }
-
+    if (!this.socket) return;
     this.socket.on(event, callback);
   }
 

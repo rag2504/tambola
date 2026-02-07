@@ -1,18 +1,27 @@
 """
-Fix production database tickets
-Run this with production MONGO_URL to fix ticket structure
+Run the production database fix automatically
 """
 import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
-import sys
+from dotenv import load_dotenv
+from pathlib import Path
 
-async def fix_production_tickets(mongo_url: str, db_name: str):
+# Load environment
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / '.env')
+
+async def fix_production_tickets():
     """Fix tickets in production database"""
+    mongo_url = os.environ.get('MONGO_URL', '').strip('"').strip("'")
+    db_name = os.environ.get('DB_NAME', 'tambola_db').strip('"').strip("'")
+    
     print("=" * 60)
     print("FIX PRODUCTION DATABASE")
     print("=" * 60)
-    print(f"\nConnecting to: {mongo_url[:50]}...")
+    print(f"\nDatabase: {db_name}")
+    print(f"MongoDB: {mongo_url[:50]}...")
+    print("\nConnecting...")
     
     try:
         client = AsyncIOMotorClient(mongo_url)
@@ -34,7 +43,7 @@ async def fix_production_tickets(mongo_url: str, db_name: str):
             
             # Check if grid is a dict (wrong structure)
             if isinstance(grid, dict):
-                print(f"\n🔧 Fixing ticket #{ticket.get('ticket_number')}")
+                print(f"🔧 Fixing ticket #{ticket.get('ticket_number')}")
                 
                 # Extract the actual grid array from the dict
                 actual_grid = grid.get('grid', [])
@@ -57,7 +66,7 @@ async def fix_production_tickets(mongo_url: str, db_name: str):
                 # Grid is correct, but check if numbers array exists
                 numbers = ticket.get('numbers', [])
                 if not numbers or len(numbers) == 0:
-                    print(f"\n🔧 Adding numbers to ticket #{ticket.get('ticket_number')}")
+                    print(f"🔧 Adding numbers to ticket #{ticket.get('ticket_number')}")
                     
                     # Extract numbers from grid
                     extracted_numbers = []
@@ -109,44 +118,14 @@ async def fix_production_tickets(mongo_url: str, db_name: str):
         
     except Exception as e:
         print(f"\n❌ Error: {e}")
-        sys.exit(1)
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
-    # Try to load from .env file first
-    from dotenv import load_dotenv
-    from pathlib import Path
-    
-    ROOT_DIR = Path(__file__).parent
-    load_dotenv(ROOT_DIR / '.env')
-    
-    # Get from environment
-    mongo_url = os.environ.get('MONGO_URL')
-    db_name = os.environ.get('DB_NAME', 'tambola_db')
-    
-    if not mongo_url:
-        print("❌ MONGO_URL environment variable not set")
-        print("\nUsage:")
-        print("  Windows CMD:")
-        print("    set MONGO_URL=your_production_mongo_url")
-        print("    set DB_NAME=tambola_db")
-        print("    python fix_production_db.py")
-        print("\n  Or just run: fix_production_db.bat")
-        print("\n  Linux/Mac:")
-        print("    export MONGO_URL='your_production_mongo_url'")
-        print("    export DB_NAME='tambola_db'")
-        print("    python fix_production_db.py")
-        sys.exit(1)
-    
-    # Remove quotes if present
-    mongo_url = mongo_url.strip('"').strip("'")
-    db_name = db_name.strip('"').strip("'")
-    
-    print(f"Database: {db_name}")
-    print(f"MongoDB: {mongo_url[:50]}...")
-    confirm = input("\n⚠️  This will modify production database. Continue? (yes/no): ")
-    
-    if confirm.lower() != 'yes':
-        print("Cancelled")
-        sys.exit(0)
-    
-    asyncio.run(fix_production_tickets(mongo_url, db_name))
+    print("\n⚠️  This will modify your production database!")
+    print("Press Ctrl+C to cancel, or Enter to continue...")
+    try:
+        input()
+        asyncio.run(fix_production_tickets())
+    except KeyboardInterrupt:
+        print("\nCancelled")

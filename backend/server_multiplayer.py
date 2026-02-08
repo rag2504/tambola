@@ -375,7 +375,6 @@ async def signup(user_data: UserCreate):
     )
     
     return Token(access_token=token, user=profile)
->>>>>>> old-version
 
 
 @api_router.post("/auth/login", response_model=Token)

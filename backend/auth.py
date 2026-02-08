@@ -4,7 +4,7 @@ Authentication utilities - JWT tokens and password hashing
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt  # Use bcrypt directly instead of passlib
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import os
@@ -14,45 +14,44 @@ SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
-# Password hashing - use bcrypt with explicit rounds
-pwd_context = CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto",
-    bcrypt__rounds=12,
-    bcrypt__ident="2b"
-)
-
 # Bearer token
 security = HTTPBearer()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash"""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode('utf-8'),
+            hashed_password.encode('utf-8')
+        )
+    except Exception:
+        return False
 
 
 def get_password_hash(password: str) -> str:
-    """Hash a password (bcrypt has 72 byte limit)"""
+    """Hash a password using bcrypt directly"""
     try:
-        # Ensure password is a string
+        # Ensure password is a string and strip whitespace
         if not isinstance(password, str):
             password = str(password)
-        
-        # Strip whitespace
         password = password.strip()
         
-        # Ensure password is within bcrypt's 72 byte limit
+        # Encode to bytes and truncate if needed (bcrypt 72 byte limit)
         password_bytes = password.encode('utf-8')
         if len(password_bytes) > 72:
-            # Truncate to 72 bytes
-            password = password_bytes[:72].decode('utf-8', errors='ignore')
+            password_bytes = password_bytes[:72]
         
-        return pwd_context.hash(password)
+        # Generate salt and hash
+        salt = bcrypt.gensalt(rounds=12)
+        hashed = bcrypt.hashpw(password_bytes, salt)
+        
+        # Return as string
+        return hashed.decode('utf-8')
     except Exception as e:
-        # Log the actual error for debugging
         import logging
         logger = logging.getLogger(__name__)
-        logger.error(f"Password hashing failed. Password length: {len(password) if password else 0}, Error: {e}")
+        logger.error(f"Password hashing failed: {e}")
         raise
 
 

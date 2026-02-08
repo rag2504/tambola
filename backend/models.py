@@ -42,7 +42,7 @@ class UserCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=50)
     email: EmailStr
     mobile: str = Field(..., min_length=10, max_length=20)  # Allow 10–20 chars so + and country codes work
-    password: str = Field(..., min_length=6)
+    password: str = Field(..., min_length=6, max_length=72)  # bcrypt limit
 
 
 class UserLogin(BaseModel):

@@ -33,11 +33,27 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     """Hash a password (bcrypt has 72 byte limit)"""
-    # Ensure password is within bcrypt's 72 byte limit
-    password_bytes = password.encode('utf-8')
-    if len(password_bytes) > 72:
-        password = password[:72]
-    return pwd_context.hash(password)
+    try:
+        # Ensure password is a string
+        if not isinstance(password, str):
+            password = str(password)
+        
+        # Strip whitespace
+        password = password.strip()
+        
+        # Ensure password is within bcrypt's 72 byte limit
+        password_bytes = password.encode('utf-8')
+        if len(password_bytes) > 72:
+            # Truncate to 72 bytes
+            password = password_bytes[:72].decode('utf-8', errors='ignore')
+        
+        return pwd_context.hash(password)
+    except Exception as e:
+        # Log the actual error for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Password hashing failed. Password length: {len(password) if password else 0}, Error: {e}")
+        raise
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:

@@ -263,7 +263,8 @@ async def signup(user_data: UserCreate):
         name=user_data.name,
         email=user_data.email,
         mobile=user_data.mobile,
-        password_hash=get_password_hash(user_data.password)
+        password_hash=get_password_hash(user_data.password),
+        wallet_balance=500.0  # Set initial balance
     )
     
     await db.users.insert_one(user.dict())

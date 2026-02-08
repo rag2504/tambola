@@ -69,6 +69,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const response = await authAPI.login({ email, password });
       
+      // Check if login was successful
+      if (!response.access_token || !response.user) {
+        throw new Error(response.message || 'Login failed - no token received');
+      }
+      
       // Save token and user data
       await AsyncStorage.setItem('auth_token', response.access_token);
       await AsyncStorage.setItem('user_data', JSON.stringify(response.user));
@@ -83,6 +88,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const signup = async (name: string, email: string, mobile: string, password: string) => {
     try {
       const response = await authAPI.signup({ name, email, mobile, password });
+      
+      // Check if signup was successful
+      if (!response.access_token || !response.user) {
+        throw new Error(response.message || 'Signup failed - no token received');
+      }
       
       // Save token and user data
       await AsyncStorage.setItem('auth_token', response.access_token);

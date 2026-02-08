@@ -344,6 +344,38 @@ async def signup(user_data: UserCreate):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=_safe_detail(e),
         )
+    # Create initial transaction record
+    transaction_id = str(uuid.uuid4())
+    await db.transactions.insert_one({
+        "id": transaction_id,
+        "user_id": user.id,
+        "type": "credit",
+        "amount": 500.0,
+        "description": "Welcome bonus - Initial wallet balance",
+        "created_at": datetime.utcnow()
+    })
+    
+    logger.info(f"Created new user {user.id} with ₹500 welcome bonus")
+    
+    # Create token
+    token = create_user_token(user.id, user.email)
+    
+    # Return user profile
+    profile = UserProfile(
+        id=user.id,
+        name=user.name,
+        email=user.email,
+        mobile=user.mobile,
+        profile_pic=user.profile_pic,
+        wallet_balance=user.wallet_balance,
+        total_games=user.total_games,
+        total_wins=user.total_wins,
+        total_winnings=user.total_winnings,
+        created_at=user.created_at
+    )
+    
+    return Token(access_token=token, user=profile)
+>>>>>>> old-version
 
 
 @api_router.post("/auth/login", response_model=Token)

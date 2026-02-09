@@ -14,7 +14,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useGameState } from '../contexts/GameStateContext';
 
 interface Claim {
   id: string;
@@ -32,31 +32,51 @@ interface Claim {
 
 export default function ClaimsScreen() {
   const router = useRouter();
+  const { gameState } = useGameState();
   const [claims, setClaims] = useState<Claim[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'pending' | 'verified'>('all');
 
   useEffect(() => {
     loadClaims();
-  }, []);
+  }, [gameState.claims]);
 
   const loadClaims = async () => {
     try {
-      const saved = await AsyncStorage.getItem('claims');
-      if (saved) {
-        setClaims(JSON.parse(saved));
-      }
+      // Use claims from GameStateContext
+      const gameClaims = gameState.claims.map(c => ({
+        id: c.id,
+        prizeId: c.prize_id,
+        prizeName: c.prize_name,
+        prizeAmount: '', // Amount not stored in claim
+        playerId: c.player_id,
+        playerName: c.player_name,
+        ticketId: c.ticket_id,
+        ticketNumber: c.ticket_number,
+        timestamp: c.timestamp,
+        status: c.verified ? 'verified' as const : 'pending' as const,
+        autoVerified: c.verified,
+      }));
+      setClaims(gameClaims);
     } catch (error) {
       console.error('Error loading claims:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const verifyClaim = async (claimId: string, approve: boolean) => {
-    const updated = claims.map(c =>
-      c.id === claimId ? { ...c, status: (approve ? 'verified' : 'rejected') as 'pending' | 'verified' | 'rejected' } : c
-    );
-    await AsyncStorage.setItem('claims', JSON.stringify(updated));
-    setClaims(updated);
-    Alert.alert('Success', approve ? 'Claim verified!' : 'Claim rejected');
+    try {
+      const updated = claims.map(c =>
+        c.id === claimId ? { ...c, status: (approve ? 'verified' : 'rejected') as 'pending' | 'verified' | 'rejected' } : c
+      );
+      setClaims(updated);
+
+      Alert.alert('Success', approve ? 'Claim verified!' : 'Claim rejected');
+    } catch (error) {
+      console.error('Error updating claim:', error);
+      Alert.alert('Error', 'Failed to update claim status');
+    }
   };
 
   const shareSummary = async () => {

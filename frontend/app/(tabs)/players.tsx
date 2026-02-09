@@ -17,6 +17,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
+import { generateTicketsForPlayers } from '../../utils/ticketGenerator';
 import { useGameState } from '../../contexts/GameStateContext';
 
 interface Player {
@@ -32,8 +34,11 @@ export default function PlayersScreen() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [playerName, setPlayerName] = useState('');
+  const [editPlayerName, setEditPlayerName] = useState('');
+  const [editPlayerTicketCount, setEditPlayerTicketCount] = useState(1);
   const [newPlayerTicketCount, setNewPlayerTicketCount] = useState(1);
   const [ticketCounts, setTicketCounts] = useState<{ [key: string]: number }>({});
   const [selectedPlayers, setSelectedPlayers] = useState<Set<string>>(new Set());
@@ -70,6 +75,14 @@ export default function PlayersScreen() {
       return;
     }
 
+    // Check for duplicate name
+    const trimmedName = playerName.trim();
+    const isDuplicate = players.some(p => p.name.toLowerCase() === trimmedName.toLowerCase());
+    if (isDuplicate) {
+      Alert.alert('Error', 'A player with this name already exists. Please use a different name.');
+      return;
+    }
+
     try {
       // Create player offline
       const newPlayer: Player = {
@@ -90,16 +103,97 @@ export default function PlayersScreen() {
       setPlayerName('');
       setNewPlayerTicketCount(1);
       setModalVisible(false);
+
+      // Regenerate tickets immediately with updated players
+      await regenerateTickets(updatedPlayers, { ...ticketCounts, [newPlayer.id]: newPlayerTicketCount });
     } catch (error) {
       console.error('Error adding player:', error);
       Alert.alert('Error', 'Failed to add player');
     }
   };
 
+  // Regenerate tickets for all players
+  const regenerateTickets = async (currentPlayers?: Player[], currentTicketCounts?: { [key: string]: number }) => {
+    try {
+      const playersToUse = currentPlayers || players;
+      const countsToUse = currentTicketCounts || ticketCounts;
+
+      if (playersToUse.length === 0) {
+        // No players, clear tickets
+        await AsyncStorage.setItem('generated_tickets', JSON.stringify([]));
+        return;
+      }
+
+      // Generate fresh tickets for all players
+      const tickets = generateTicketsForPlayers(playersToUse, countsToUse);
+      await AsyncStorage.setItem('generated_tickets', JSON.stringify(tickets));
+      console.log(`Regenerated ${tickets.length} tickets for ${playersToUse.length} players`);
+    } catch (error) {
+      console.error('Error regenerating tickets:', error);
+    }
+  };
+
+  const handleEditPlayer = (player: Player) => {
+    setEditingPlayer(player);
+    setEditPlayerName(player.name);
+    setEditPlayerTicketCount(ticketCounts[player.id] || 1);
+    setEditModalVisible(true);
+  };
+
+  const handleUpdatePlayer = async () => {
+    if (!editPlayerName.trim()) {
+      Alert.alert('Error', 'Please enter a player name');
+      return;
+    }
+
+    if (!editingPlayer) return;
+
+    // Check for duplicate name (excluding current player)
+    const trimmedName = editPlayerName.trim();
+    const isDuplicate = players.some(p =>
+      p.id !== editingPlayer.id && p.name.toLowerCase() === trimmedName.toLowerCase()
+    );
+    if (isDuplicate) {
+      Alert.alert('Error', 'A player with this name already exists. Please use a different name.');
+      return;
+    }
+
+    try {
+      const oldName = editingPlayer.name;
+      const newName = trimmedName;
+
+      // Update player in the list
+      const updatedPlayers = players.map(p =>
+        p.id === editingPlayer.id
+          ? { ...p, name: newName }
+          : p
+      );
+      setPlayers(updatedPlayers);
+
+      // Update ticket count
+      setTicketCounts({ ...ticketCounts, [editingPlayer.id]: editPlayerTicketCount });
+
+      // Save to AsyncStorage
+      await AsyncStorage.setItem('players', JSON.stringify(updatedPlayers));
+      await AsyncStorage.setItem(`ticket_count_${editingPlayer.id}`, editPlayerTicketCount.toString());
+
+      // Regenerate all tickets with updated player data
+      await regenerateTickets(updatedPlayers, { ...ticketCounts, [editingPlayer.id]: editPlayerTicketCount });
+
+      setEditModalVisible(false);
+      setEditingPlayer(null);
+      setEditPlayerName('');
+      setEditPlayerTicketCount(1);
+    } catch (error) {
+      console.error('Error updating player:', error);
+      Alert.alert('Error', 'Failed to update player');
+    }
+  };
+
   const handleDeletePlayer = async (player: Player) => {
     Alert.alert(
       'Delete Player',
-      `Are you sure you want to delete ${player.name}?`,
+      `Are you sure you want to delete ${player.name}? This will also delete all their tickets.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -111,6 +205,9 @@ export default function PlayersScreen() {
               setPlayers(updatedPlayers);
               await AsyncStorage.setItem('players', JSON.stringify(updatedPlayers));
               await AsyncStorage.removeItem(`ticket_count_${player.id}`);
+
+              // Regenerate tickets for remaining players
+              await regenerateTickets(updatedPlayers, ticketCounts);
             } catch (error) {
               console.error('Error deleting player:', error);
             }
@@ -145,6 +242,29 @@ export default function PlayersScreen() {
     const newCount = Math.max(1, Math.min(100, count));
     setTicketCounts({ ...ticketCounts, [playerId]: newCount });
     await AsyncStorage.setItem(`ticket_count_${playerId}`, newCount.toString());
+  };
+
+  const shareAllTickets = async () => {
+    try {
+      // Load all generated tickets to check if they exist
+      const ticketsData = await AsyncStorage.getItem('generated_tickets');
+      if (!ticketsData) {
+        Alert.alert('No Tickets', 'Please generate tickets first by starting a game');
+        return;
+      }
+
+      const allTickets = JSON.parse(ticketsData);
+      if (allTickets.length === 0) {
+        Alert.alert('No Tickets', 'No tickets have been generated yet');
+        return;
+      }
+
+      // Navigate to visual tickets display screen
+      router.push('/all-tickets-display' as any);
+    } catch (error) {
+      console.error('Error loading tickets:', error);
+      Alert.alert('Error', 'Failed to load tickets');
+    }
   };
 
   const handleStartGame = async () => {
@@ -204,12 +324,21 @@ export default function PlayersScreen() {
           </Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.editButton}
-          onPress={() => viewPlayerTickets(item)}
-        >
-          <MaterialCommunityIcons name="pencil" size={24} color="#FFD700" />
-        </TouchableOpacity>
+        <View style={styles.actionButtons}>
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={() => handleEditPlayer(item)}
+          >
+            <MaterialCommunityIcons name="pencil" size={20} color="#FFD700" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={() => handleDeletePlayer(item)}
+          >
+            <MaterialCommunityIcons name="delete" size={20} color="#FF6B6B" />
+          </TouchableOpacity>
+        </View>
       </View>
     );
   };
@@ -272,10 +401,20 @@ export default function PlayersScreen() {
           </TouchableOpacity>
 
           {players.length > 0 && (
-            <TouchableOpacity style={styles.startButton} onPress={handleStartGame}>
-              <Text style={styles.startButtonText}>Start Game</Text>
-              <MaterialCommunityIcons name="play" size={24} color="#FFF" />
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity
+                style={styles.shareAllButton}
+                onPress={shareAllTickets}
+              >
+                <MaterialCommunityIcons name="share-variant" size={24} color="#1a5f1a" />
+                <Text style={styles.shareAllButtonText}>Share Links</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.startButton} onPress={handleStartGame}>
+                <Text style={styles.startButtonText}>Start Game</Text>
+                <MaterialCommunityIcons name="play" size={24} color="#FFF" />
+              </TouchableOpacity>
+            </>
           )}
         </View>
 
@@ -336,6 +475,70 @@ export default function PlayersScreen() {
                   onPress={handleAddPlayer}
                 >
                   <Text style={styles.confirmButtonText}>Add</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        {/* Edit Player Modal */}
+        <Modal
+          visible={editModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setEditModalVisible(false)}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.modalOverlay}
+          >
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Edit Player</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter player name"
+                placeholderTextColor="#999"
+                value={editPlayerName}
+                onChangeText={setEditPlayerName}
+                autoFocus
+              />
+
+              <View style={styles.ticketSelectorContainer}>
+                <Text style={styles.ticketSelectorLabel}>Number of Tickets</Text>
+                <View style={styles.ticketSelectorControls}>
+                  <TouchableOpacity
+                    style={styles.ticketSelectorButton}
+                    onPress={() => setEditPlayerTicketCount(Math.max(1, editPlayerTicketCount - 1))}
+                  >
+                    <MaterialCommunityIcons name="minus" size={24} color="#1a5f1a" />
+                  </TouchableOpacity>
+                  <Text style={styles.ticketSelectorCount}>{editPlayerTicketCount}</Text>
+                  <TouchableOpacity
+                    style={styles.ticketSelectorButton}
+                    onPress={() => setEditPlayerTicketCount(Math.min(100, editPlayerTicketCount + 1))}
+                  >
+                    <MaterialCommunityIcons name="plus" size={24} color="#1a5f1a" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.cancelButton]}
+                  onPress={() => {
+                    setEditModalVisible(false);
+                    setEditingPlayer(null);
+                    setEditPlayerName('');
+                    setEditPlayerTicketCount(1);
+                  }}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.confirmButton]}
+                  onPress={handleUpdatePlayer}
+                >
+                  <Text style={styles.confirmButtonText}>Update</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -421,7 +624,14 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.7)',
     marginTop: 4,
   },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   editButton: {
+    padding: 8,
+  },
+  deleteButton: {
     padding: 8,
   },
   emptyState: {
@@ -479,6 +689,20 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#FFF',
+  },
+  shareAllButton: {
+    backgroundColor: '#4ECDC4',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  shareAllButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1a5f1a',
   },
   modalOverlay: {
     flex: 1,

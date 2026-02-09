@@ -355,3 +355,46 @@ const checkHalfHouse = (numbers: number[], called: number[]): boolean => {
     const calledCount = numbers.filter(n => called.includes(n)).length;
     return calledCount >= halfCount;
 };
+
+/**
+ * Verify a player's claim for a specific prize
+ * @param playerId - The player making the claim
+ * @param prizeId - The prize being claimed
+ * @param tickets - All tickets in the game
+ * @param calledNumbers - Numbers that have been called
+ * @returns Verification result with ticket ID if valid
+ */
+export const verifyPlayerClaim = (
+    playerId: string,
+    prizeId: string,
+    tickets: Ticket[],
+    calledNumbers: number[]
+): { valid: boolean; ticketId?: string; ticketNumber?: number; message: string } => {
+    // Get all tickets for this player
+    const playerTickets = tickets.filter(t => t.player_id === playerId);
+
+    if (playerTickets.length === 0) {
+        return {
+            valid: false,
+            message: 'No tickets found for this player'
+        };
+    }
+
+    // Check each ticket to see if any wins this prize
+    for (const ticket of playerTickets) {
+        const wins = checkPrizeWin(ticket, prizeId, calledNumbers);
+        if (wins) {
+            return {
+                valid: true,
+                ticketId: ticket.id,
+                ticketNumber: ticket.ticket_number,
+                message: `Valid claim! Ticket #${ticket.ticket_number} wins this prize.`
+            };
+        }
+    }
+
+    return {
+        valid: false,
+        message: 'None of your tickets match this prize pattern yet. Keep playing!'
+    };
+};

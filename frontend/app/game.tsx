@@ -10,6 +10,8 @@ import {
   Linking,
   Share,
   Platform,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,6 +21,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Speech from 'expo-speech';
 import { useGameState } from '../contexts/GameStateContext';
 import { generateTicketsForPlayers, Ticket } from '../utils/ticketGenerator';
+import { checkPrizeWin } from '../utils/prizeValidator';
+import { PrizeClaim, SelectedPrize } from '../types/claim-types';
 
 const { width } = Dimensions.get('window');
 const AUTO_SPEED_SECONDS = 5;
@@ -30,10 +34,11 @@ interface Player {
 
 export default function GameScreen() {
   const router = useRouter();
-  const { gameState, callNumber, setAutoCalling, initializeGame, resetGame } = useGameState();
+  const { gameState, callNumber, setAutoCalling, initializeGame, resetGame, addClaim, isPrizeClaimed } = useGameState();
   const [game, setGame] = useState<{ players: Player[]; tickets: Ticket[] } | null>(null);
   const [loading, setLoading] = useState(true);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [selectedPrizes, setSelectedPrizes] = useState<SelectedPrize[]>([]);
+  const intervalRef = useRef<number | null>(null);
 
   useEffect(() => {
     initializeGameOffline();
@@ -69,6 +74,13 @@ export default function GameScreen() {
     }
   }, [gameState.currentNumber]);
 
+  // Automatically check for prize wins after each number is called
+  useEffect(() => {
+    if (gameState.currentNumber !== null && game) {
+      checkAllPrizesAutomatically();
+    }
+  }, [gameState.currentNumber, game]);
+
   const initializeGameOffline = async () => {
     try {
       const gameDataStr = await AsyncStorage.getItem('current_game');
@@ -79,7 +91,7 @@ export default function GameScreen() {
       }
 
       const gameData = JSON.parse(gameDataStr);
-      
+
       // Generate tickets offline (fresh tickets per new game start)
       const tickets = generateTicketsForPlayers(gameData.players, gameData.ticketCounts);
       await AsyncStorage.setItem('generated_tickets', JSON.stringify(tickets));
@@ -90,7 +102,14 @@ export default function GameScreen() {
         tickets: tickets,
       };
       setGame(gameObj);
-      
+
+      // Load selected prizes
+      const prizesData = await AsyncStorage.getItem('selected_prizes');
+      if (prizesData) {
+        const prizes: SelectedPrize[] = JSON.parse(prizesData);
+        setSelectedPrizes(prizes.filter(p => p.enabled));
+      }
+
       // Initialize game state (fresh)
       const gameId = `game_${Date.now()}`;
       await initializeGame(gameId);
@@ -156,7 +175,7 @@ export default function GameScreen() {
     const called = gameState.calledNumbers.sort((a, b) => a - b);
     let message = '🎲 TAMBOLA GAME BOARD 🎲\n\n';
     message += `Called Numbers (${called.length}/90):\n`;
-    
+
     // Group numbers by tens
     for (let i = 0; i < 9; i++) {
       const start = i * 10 + 1;
@@ -166,7 +185,7 @@ export default function GameScreen() {
         message += `${start}-${end}: ${range.join(', ')}\n`;
       }
     }
-    
+
     message += `\nCurrent Number: ${gameState.currentNumber || 'Not started'}\n`;
     message += `Remaining: ${90 - called.length}`;
 
@@ -188,12 +207,12 @@ export default function GameScreen() {
 
       const prizes = JSON.parse(prizesData);
       const enabled = prizes.filter((p: any) => p.enabled);
-      
+
       let message = '🏆 TAMBOLA PRIZE POOL 🏆\n\n';
       enabled.forEach((prize: any) => {
         message += `${prize.name}: ₹${prize.amount}\n`;
       });
-      
+
       const total = enabled.reduce((sum: number, p: any) => sum + parseInt(p.amount), 0);
       message += `\n💰 Total Prize Pool: ₹${total.toLocaleString()}`;
 
@@ -206,6 +225,72 @@ export default function GameScreen() {
 
   const viewClaims = () => {
     router.push('/claims');
+  };
+
+  // Automatically check all prizes for wins
+  const checkAllPrizesAutomatically = async () => {
+    if (!game) return;
+
+    // Check each unclaimed prize
+    for (const prize of selectedPrizes) {
+      // Skip if already claimed
+      if (isPrizeClaimed(prize.id)) continue;
+
+      // Check all tickets for this prize
+      for (const ticket of game.tickets) {
+        const wins = checkPrizeWin(ticket, prize.id, gameState.calledNumbers);
+
+        if (wins) {
+          // Found a winner! Create claim automatically
+          const claim: PrizeClaim = {
+            id: `claim_${Date.now()}_${prize.id}`,
+            prize_id: prize.id,
+            prize_name: prize.name,
+            player_id: ticket.player_id,
+            player_name: ticket.player_name,
+            ticket_id: ticket.id,
+            ticket_number: ticket.ticket_number,
+            timestamp: new Date().toISOString(),
+            verified: true,
+          };
+
+          await addClaim(claim);
+
+          // Show celebration alert
+          Alert.alert(
+            '🎉 Winner!',
+            `${ticket.player_name} wins ${prize.name}!\nTicket #${String(ticket.ticket_number).padStart(4, '0')}`,
+            [{ text: 'OK', onPress: () => checkAllPrizesClaimed() }]
+          );
+
+          // Break after first winner for this prize (first come, first served)
+          break;
+        }
+      }
+    }
+  };
+
+  const checkAllPrizesClaimed = () => {
+    const allClaimed = selectedPrizes.every(prize => isPrizeClaimed(prize.id));
+
+    if (allClaimed && selectedPrizes.length > 0) {
+      Alert.alert(
+        '🎊 Game Complete!',
+        'All prizes have been claimed! The game will now end.',
+        [
+          {
+            text: 'View Claims',
+            onPress: () => {
+              router.push('/claims');
+            },
+          },
+          {
+            text: 'End Game',
+            onPress: endGameAndGoToPlayers,
+          },
+        ]
+      );
+    }
   };
 
   const renderNumberGrid = () => {
@@ -331,6 +416,36 @@ export default function GameScreen() {
             <Text style={styles.sectionTitle}>Called Numbers</Text>
             {renderNumberGrid()}
           </View>
+
+          {/* Prize Status */}
+          {selectedPrizes.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Prize Status</Text>
+              {selectedPrizes.map(prize => {
+                const claimed = isPrizeClaimed(prize.id);
+                const claim = gameState.claims.find(c => c.prize_id === prize.id);
+                return (
+                  <View key={prize.id} style={styles.prizeCard}>
+                    <View style={styles.prizeInfo}>
+                      <Text style={styles.prizeName}>{prize.name}</Text>
+                      <Text style={styles.prizeAmount}>₹{prize.amount}</Text>
+                    </View>
+                    {claimed && claim ? (
+                      <View style={styles.prizeClaimedBadge}>
+                        <MaterialCommunityIcons name="check-circle" size={16} color="#4CAF50" />
+                        <Text style={styles.prizeClaimedText}>{claim.player_name}</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.prizeUnclaimedBadge}>
+                        <MaterialCommunityIcons name="clock-outline" size={16} color="#FFD700" />
+                        <Text style={styles.prizeUnclaimedText}>Unclaimed</Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          )}
 
           {/* Players */}
           <View style={styles.section}>
@@ -569,5 +684,62 @@ const styles = StyleSheet.create({
   playerCardTickets: {
     fontSize: 14,
     color: 'rgba(255, 255, 255, 0.7)',
+  },
+  prizeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    padding: 14,
+    borderRadius: 8,
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: '#FFD700',
+  },
+  prizeInfo: {
+    flex: 1,
+  },
+  prizeName: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginBottom: 4,
+  },
+  prizeAmount: {
+    fontSize: 14,
+    color: '#FFD700',
+    fontWeight: '600',
+  },
+  prizeClaimedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(76, 175, 80, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  prizeClaimedText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4CAF50',
+  },
+  prizeUnclaimedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255, 215, 0, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FFD700',
+  },
+  prizeUnclaimedText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FFD700',
   },
 });

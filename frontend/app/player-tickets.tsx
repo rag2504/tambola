@@ -61,24 +61,48 @@ export default function PlayerTicketsScreen() {
   const shareTickets = async () => {
     if (tickets.length === 0) return;
 
-    let message = `🎫 TAMBOLA TICKETS - ${params.playerName}\n\n`;
-    message += `Total Tickets: ${tickets.length}\n`;
-    message += `Ticket Numbers: ${tickets.map(t => `#${String(t.ticket_number).padStart(4, '0')}`).join(', ')}\n\n`;
+    let message = `*${params.playerName?.toUpperCase() || 'PLAYER'}*\n`;
+    message += `${tickets.length} Ticket${tickets.length > 1 ? 's' : ''}\n\n`;
 
-    // Add ticket grids
+    // Add ticket grids with box-drawing characters
     tickets.forEach(ticket => {
-      message += `\nTicket #${String(ticket.ticket_number).padStart(4, '0')}\n`;
-      ticket.grid.forEach(row => {
-        message += row.map(cell => cell !== null ? String(cell).padStart(2, ' ') : '__').join(' | ') + '\n';
+      message += `*Tambola Book*\n`;
+      message += `${params.playerName?.toUpperCase() || 'PLAYER'} - ${String(ticket.ticket_number).padStart(4, '0')}\n\n`;
+
+      // Top border
+      message += '┌──┬──┬──┬──┬──┬──┬──┬──┬──┐\n';
+
+      // Grid rows
+      ticket.grid.forEach((row, rowIndex) => {
+        message += '│';
+        row.forEach((cell) => {
+          if (cell !== null) {
+            message += String(cell).padStart(2, ' ') + '│';
+          } else {
+            message += '  │';
+          }
+        });
+        message += '\n';
+
+        // Add middle or bottom border
+        if (rowIndex < ticket.grid.length - 1) {
+          message += '├──┼──┼──┼──┼──┼──┼──┼──┼──┤\n';
+        } else {
+          message += '└──┴──┴──┴──┴──┴──┴──┴──┴──┘\n';
+        }
       });
+
+      message += '\n';
     });
 
-    message += `\nGood Luck! 🍀`;
+    message += `${params.playerName}, Please Find Your ${tickets.length} Ticket${tickets.length > 1 ? 's' : ''}\n`;
+    message += 'Good Luck! 🍀';
 
     try {
       // Try native Share API first (works on all platforms)
       const result = await Share.share({
         message: message,
+        title: `Tambola Tickets - ${params.playerName}`,
       });
 
       // If user selected WhatsApp or shared successfully, we're done

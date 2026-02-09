@@ -1,11 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { PrizeClaim } from '../types/claim-types';
 
 interface GameState {
   currentNumber: number | null;
   calledNumbers: number[];
   isAutoCalling: boolean;
   gameId: string | null;
+  claims: PrizeClaim[];
 }
 
 interface GameStateContextType {
@@ -14,6 +16,9 @@ interface GameStateContextType {
   setAutoCalling: (isAuto: boolean) => void;
   resetGame: () => void;
   initializeGame: (gameId: string) => void;
+  addClaim: (claim: PrizeClaim) => Promise<void>;
+  updateClaimStatus: (claimId: string, verified: boolean) => Promise<void>;
+  isPrizeClaimed: (prizeId: string) => boolean;
 }
 
 const GameStateContext = createContext<GameStateContextType | undefined>(undefined);
@@ -24,6 +29,7 @@ export const GameStateProvider: React.FC<{ children: ReactNode }> = ({ children 
     calledNumbers: [],
     isAutoCalling: false,
     gameId: null,
+    claims: [],
   });
 
   // Load game state from storage on mount
@@ -128,6 +134,7 @@ export const GameStateProvider: React.FC<{ children: ReactNode }> = ({ children 
       calledNumbers: [],
       isAutoCalling: false,
       gameId: null,
+      claims: [],
     };
     await saveGameState(newState);
   }, []);
@@ -140,6 +147,36 @@ export const GameStateProvider: React.FC<{ children: ReactNode }> = ({ children 
     await saveGameState(newState);
   }, [gameState]);
 
+  const addClaim = useCallback(async (claim: PrizeClaim) => {
+    const newClaims = [...gameState.claims, claim];
+    const newState: GameState = {
+      ...gameState,
+      claims: newClaims,
+    };
+    await saveGameState(newState);
+
+    // Also save to separate claims storage for history
+    await AsyncStorage.setItem('game_claims', JSON.stringify(newClaims));
+  }, [gameState]);
+
+  const updateClaimStatus = useCallback(async (claimId: string, verified: boolean) => {
+    const updatedClaims = gameState.claims.map(claim =>
+      claim.id === claimId ? { ...claim, verified } : claim
+    );
+    const newState: GameState = {
+      ...gameState,
+      claims: updatedClaims,
+    };
+    await saveGameState(newState);
+
+    // Also update separate claims storage
+    await AsyncStorage.setItem('game_claims', JSON.stringify(updatedClaims));
+  }, [gameState]);
+
+  const isPrizeClaimed = useCallback((prizeId: string): boolean => {
+    return gameState.claims.some(claim => claim.prize_id === prizeId && claim.verified);
+  }, [gameState.claims]);
+
   return (
     <GameStateContext.Provider
       value={{
@@ -148,6 +185,9 @@ export const GameStateProvider: React.FC<{ children: ReactNode }> = ({ children 
         setAutoCalling,
         resetGame,
         initializeGame,
+        addClaim,
+        updateClaimStatus,
+        isPrizeClaimed,
       }}
     >
       {children}

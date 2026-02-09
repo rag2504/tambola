@@ -84,9 +84,9 @@ export default function PrizeConfigScreen() {
         <View style={styles.footer}>
           <TouchableOpacity
             style={styles.continueButton}
-            onPress={() => router.push('/game')}
+            onPress={() => router.push('/share-prize')}
           >
-            <Text style={styles.continueButtonText}>Continue to Game</Text>
+            <Text style={styles.continueButtonText}>Continue</Text>
             <MaterialCommunityIcons name="arrow-right" size={24} color="#FFF" />
           </TouchableOpacity>
         </View>

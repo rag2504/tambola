@@ -16,6 +16,36 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export default function SettingsScreen() {
   const router = useRouter();
 
+  const handleClearOfflineData = () => {
+    Alert.alert(
+      'Clear Offline Game Data',
+      'This will delete the current game session, tickets, and prizes. Your players list will be preserved. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await AsyncStorage.multiRemove([
+                'current_game',
+                'generated_tickets',
+                'selected_prizes',
+                'game_state',
+                'claims',
+                'admin_selected_ticket',
+              ]);
+              Alert.alert('Success', 'Offline game data cleared');
+            } catch (error) {
+              console.error('Error clearing offline data:', error);
+              Alert.alert('Error', 'Failed to clear offline data');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleClearData = () => {
     Alert.alert(
       'Clear All Data',
@@ -105,6 +135,13 @@ export default function SettingsScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Data</Text>
             <View style={styles.settingsContainer}>
+              <SettingItem
+                icon="database-remove"
+                title="Clear Offline Game Data"
+                subtitle="Delete current game, tickets, and prizes"
+                onPress={handleClearOfflineData}
+                color="#FFA500"
+              />
               <SettingItem
                 icon="delete-forever"
                 title="Clear All Data"

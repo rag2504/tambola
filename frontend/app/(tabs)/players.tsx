@@ -34,7 +34,10 @@ export default function PlayersScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [playerName, setPlayerName] = useState('');
+  const [newPlayerTicketCount, setNewPlayerTicketCount] = useState(1);
   const [ticketCounts, setTicketCounts] = useState<{ [key: string]: number }>({});
+  const [selectedPlayers, setSelectedPlayers] = useState<Set<string>>(new Set());
+  const [selectAll, setSelectAll] = useState(false);
 
   const fetchPlayers = useCallback(async () => {
     try {
@@ -42,7 +45,7 @@ export default function PlayersScreen() {
       const playersData = await AsyncStorage.getItem('players');
       const loadedPlayers: Player[] = playersData ? JSON.parse(playersData) : [];
       setPlayers(loadedPlayers);
-      
+
       // Load ticket counts from AsyncStorage
       const counts: { [key: string]: number } = {};
       for (const player of loadedPlayers) {
@@ -72,19 +75,20 @@ export default function PlayersScreen() {
       const newPlayer: Player = {
         id: `player_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         name: playerName.trim(),
-        ticket_count: 1,
+        ticket_count: newPlayerTicketCount,
         created_at: new Date().toISOString(),
       };
-      
+
       const updatedPlayers = [...players, newPlayer];
       setPlayers(updatedPlayers);
-      setTicketCounts({ ...ticketCounts, [newPlayer.id]: 1 });
-      
+      setTicketCounts({ ...ticketCounts, [newPlayer.id]: newPlayerTicketCount });
+
       // Save to AsyncStorage
       await AsyncStorage.setItem('players', JSON.stringify(updatedPlayers));
-      await AsyncStorage.setItem(`ticket_count_${newPlayer.id}`, '1');
-      
+      await AsyncStorage.setItem(`ticket_count_${newPlayer.id}`, newPlayerTicketCount.toString());
+
       setPlayerName('');
+      setNewPlayerTicketCount(1);
       setModalVisible(false);
     } catch (error) {
       console.error('Error adding player:', error);
@@ -116,6 +120,27 @@ export default function PlayersScreen() {
     );
   };
 
+  const togglePlayerSelection = (playerId: string) => {
+    const newSelected = new Set(selectedPlayers);
+    if (newSelected.has(playerId)) {
+      newSelected.delete(playerId);
+    } else {
+      newSelected.add(playerId);
+    }
+    setSelectedPlayers(newSelected);
+    setSelectAll(newSelected.size === players.length && players.length > 0);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectAll) {
+      setSelectedPlayers(new Set());
+      setSelectAll(false);
+    } else {
+      setSelectedPlayers(new Set(players.map(p => p.id)));
+      setSelectAll(true);
+    }
+  };
+
   const updateTicketCount = async (playerId: string, count: number) => {
     const newCount = Math.max(1, Math.min(100, count));
     setTicketCounts({ ...ticketCounts, [playerId]: newCount });
@@ -138,7 +163,7 @@ export default function PlayersScreen() {
       ticketCounts,
     };
     await AsyncStorage.setItem('current_game', JSON.stringify(gameData));
-    
+
     // Navigate to prize configuration first
     router.push('/prize-config');
   };
@@ -153,56 +178,41 @@ export default function PlayersScreen() {
     });
   };
 
-  const renderPlayer = ({ item }: { item: Player }) => (
-    <TouchableOpacity
-      style={styles.playerCard}
-      onPress={() => viewPlayerTickets(item)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.playerInfo}>
-        <MaterialCommunityIcons name="account" size={40} color="#FFD700" />
-        <View style={styles.playerDetails}>
-          <Text style={styles.playerName}>{item.name}</Text>
+  const renderPlayer = ({ item, index }: { item: Player; index: number }) => {
+    const ticketCount = ticketCounts[item.id] || 1;
+    const ticketStart = index === 0 ? 1 : players.slice(0, index).reduce((sum, p) => sum + (ticketCounts[p.id] || 1), 0) + 1;
+    const ticketEnd = ticketStart + ticketCount - 1;
+    const isSelected = selectedPlayers.has(item.id);
+
+    return (
+      <View style={styles.playerCard}>
+        <TouchableOpacity
+          style={styles.checkbox}
+          onPress={() => togglePlayerSelection(item.id)}
+        >
+          <MaterialCommunityIcons
+            name={isSelected ? "checkbox-marked" : "checkbox-blank-outline"}
+            size={24}
+            color={isSelected ? "#FFD700" : "#999"}
+          />
+        </TouchableOpacity>
+
+        <View style={styles.playerInfo}>
+          <Text style={styles.playerName}>{index + 1}. {item.name}</Text>
           <Text style={styles.playerMeta}>
-            {ticketCounts[item.id] || 1} ticket(s)
+            {ticketCount} Ticket{ticketCount > 1 ? 's' : ''} ({ticketStart} - {ticketEnd})
           </Text>
         </View>
-      </View>
 
-      <View style={styles.ticketControls}>
         <TouchableOpacity
-          style={styles.controlButton}
-          onPress={(e) => {
-            e.stopPropagation();
-            updateTicketCount(item.id, (ticketCounts[item.id] || 1) - 1);
-          }}
+          style={styles.editButton}
+          onPress={() => viewPlayerTickets(item)}
         >
-          <MaterialCommunityIcons name="minus" size={24} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.ticketCount}>{ticketCounts[item.id] || 1}</Text>
-        <TouchableOpacity
-          style={styles.controlButton}
-          onPress={(e) => {
-            e.stopPropagation();
-            updateTicketCount(item.id, (ticketCounts[item.id] || 1) + 1);
-          }}
-        >
-          <MaterialCommunityIcons name="plus" size={24} color="#FFF" />
+          <MaterialCommunityIcons name="pencil" size={24} color="#FFD700" />
         </TouchableOpacity>
       </View>
-
-      <TouchableOpacity
-        style={styles.deleteButton}
-        onPress={(e) => {
-          e.stopPropagation();
-          handleDeletePlayer(item);
-        }}
-      >
-        <MaterialCommunityIcons name="delete" size={24} color="#FF4444" />
-      </TouchableOpacity>
-      <MaterialCommunityIcons name="chevron-right" size={24} color="#FFD700" />
-    </TouchableOpacity>
-  );
+    );
+  };
 
   if (loading) {
     return (
@@ -229,12 +239,27 @@ export default function PlayersScreen() {
             <Text style={styles.emptySubtext}>Tap + to add your first player</Text>
           </View>
         ) : (
-          <FlatList
-            data={players}
-            renderItem={renderPlayer}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContainer}
-          />
+          <>
+            <View style={styles.selectAllContainer}>
+              <TouchableOpacity
+                style={styles.selectAllButton}
+                onPress={toggleSelectAll}
+              >
+                <MaterialCommunityIcons
+                  name={selectAll ? "checkbox-marked" : "checkbox-blank-outline"}
+                  size={24}
+                  color={selectAll ? "#FFD700" : "#999"}
+                />
+                <Text style={styles.selectAllText}>Select All</Text>
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={players}
+              renderItem={renderPlayer}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.listContainer}
+            />
+          </>
         )}
 
         <View style={styles.footer}>
@@ -275,12 +300,33 @@ export default function PlayersScreen() {
                 onChangeText={setPlayerName}
                 autoFocus
               />
+
+              <View style={styles.ticketSelectorContainer}>
+                <Text style={styles.ticketSelectorLabel}>Number of Tickets</Text>
+                <View style={styles.ticketSelectorControls}>
+                  <TouchableOpacity
+                    style={styles.ticketSelectorButton}
+                    onPress={() => setNewPlayerTicketCount(Math.max(1, newPlayerTicketCount - 1))}
+                  >
+                    <MaterialCommunityIcons name="minus" size={24} color="#1a5f1a" />
+                  </TouchableOpacity>
+                  <Text style={styles.ticketSelectorCount}>{newPlayerTicketCount}</Text>
+                  <TouchableOpacity
+                    style={styles.ticketSelectorButton}
+                    onPress={() => setNewPlayerTicketCount(Math.min(100, newPlayerTicketCount + 1))}
+                  >
+                    <MaterialCommunityIcons name="plus" size={24} color="#1a5f1a" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
               <View style={styles.modalButtons}>
                 <TouchableOpacity
                   style={[styles.modalButton, styles.cancelButton]}
                   onPress={() => {
                     setModalVisible(false);
                     setPlayerName('');
+                    setNewPlayerTicketCount(1);
                   }}
                 >
                   <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -341,14 +387,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#FFD700',
-  },
-  playerInfo: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 12,
   },
-  playerDetails: {
+  checkbox: {
+    padding: 4,
+  },
+  selectAllContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 215, 0, 0.3)',
+  },
+  selectAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  selectAllText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFF',
+  },
+  playerInfo: {
     flex: 1,
   },
   playerName: {
@@ -361,28 +421,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.7)',
     marginTop: 4,
   },
-  ticketControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginRight: 12,
-  },
-  controlButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 215, 0, 0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  ticketCount: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#FFD700',
-    minWidth: 40,
-    textAlign: 'center',
-  },
-  deleteButton: {
+  editButton: {
     padding: 8,
   },
   emptyState: {
@@ -493,5 +532,37 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#FFF',
+  },
+  ticketSelectorContainer: {
+    marginBottom: 16,
+  },
+  ticketSelectorLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  ticketSelectorControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
+  },
+  ticketSelectorButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFD700',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#1a5f1a',
+  },
+  ticketSelectorCount: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#1a5f1a',
+    minWidth: 60,
+    textAlign: 'center',
   },
 });

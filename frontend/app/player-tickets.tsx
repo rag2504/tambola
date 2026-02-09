@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useGameState } from '../contexts/GameStateContext';
+import { checkPrizeWin } from '../utils/prizeValidator';
 
 const { width } = Dimensions.get('window');
 
@@ -63,7 +64,7 @@ export default function PlayerTicketsScreen() {
     let message = `🎫 TAMBOLA TICKETS - ${params.playerName}\n\n`;
     message += `Total Tickets: ${tickets.length}\n`;
     message += `Ticket Numbers: ${tickets.map(t => `#${String(t.ticket_number).padStart(4, '0')}`).join(', ')}\n\n`;
-    
+
     // Add ticket grids
     tickets.forEach(ticket => {
       message += `\nTicket #${String(ticket.ticket_number).padStart(4, '0')}\n`;
@@ -71,7 +72,7 @@ export default function PlayerTicketsScreen() {
         message += row.map(cell => cell !== null ? String(cell).padStart(2, ' ') : '__').join(' | ') + '\n';
       });
     });
-    
+
     message += `\nGood Luck! 🍀`;
 
     try {
@@ -89,7 +90,7 @@ export default function PlayerTicketsScreen() {
       try {
         const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(message)}`;
         const canOpen = await Linking.canOpenURL(whatsappUrl);
-        
+
         if (canOpen) {
           await Linking.openURL(whatsappUrl);
         } else {
@@ -103,47 +104,7 @@ export default function PlayerTicketsScreen() {
   };
 
   const checkWin = (ticket: Ticket, prizeType: string): boolean => {
-    const called = gameState.calledNumbers;
-    const grid = ticket.grid;
-
-    switch (prizeType) {
-      case '4corners':
-        // Check all 4 corners
-        const corners = [
-          grid[0].find((n, i) => n !== null && i === 0) || grid[0].find((n, i) => n !== null && i === 8),
-          grid[2].find((n, i) => n !== null && i === 0) || grid[2].find((n, i) => n !== null && i === 8),
-        ];
-        const topLeft = grid[0].find(n => n !== null);
-        const topRight = grid[0].reverse().find(n => n !== null);
-        grid[0].reverse(); // restore
-        const bottomLeft = grid[2].find(n => n !== null);
-        const bottomRight = grid[2].reverse().find(n => n !== null);
-        grid[2].reverse(); // restore
-        
-        return [topLeft, topRight, bottomLeft, bottomRight]
-          .filter(n => n !== null)
-          .every(n => called.includes(n!));
-
-      case 'early5':
-        // First 5 numbers of ticket
-        const first5 = ticket.numbers.slice(0, 5);
-        return first5.every(n => called.includes(n));
-
-      case 'topline':
-        return grid[0].filter(n => n !== null).every(n => called.includes(n!));
-
-      case 'middleline':
-        return grid[1].filter(n => n !== null).every(n => called.includes(n!));
-
-      case 'bottomline':
-        return grid[2].filter(n => n !== null).every(n => called.includes(n!));
-
-      case 'fullhouse':
-        return ticket.numbers.every(n => called.includes(n));
-
-      default:
-        return false;
-    }
+    return checkPrizeWin(ticket, prizeType, gameState.calledNumbers);
   };
 
   const claimPrize = async (ticket: Ticket) => {
@@ -158,7 +119,7 @@ export default function PlayerTicketsScreen() {
       const enabledPrizes = prizes.filter((p: any) => p.enabled);
 
       // Check which prizes this ticket has won
-      const wonPrizes = enabledPrizes.filter((prize: any) => 
+      const wonPrizes = enabledPrizes.filter((prize: any) =>
         checkWin(ticket, prize.id)
       );
 

@@ -27,6 +27,7 @@ export default function RootLayout() {
               <Stack.Screen name="admin" options={{ presentation: 'modal' }} />
               <Stack.Screen name="profile" />
               <Stack.Screen name="prize-config" />
+              <Stack.Screen name="prize-category-detail" />
               <Stack.Screen name="game" />
               <Stack.Screen name="player-tickets" options={{ presentation: 'card' }} />
               <Stack.Screen name="claims" options={{ presentation: 'card' }} />

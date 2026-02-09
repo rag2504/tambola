@@ -466,7 +466,20 @@ async def get_room_tickets(
     if room["host_id"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="Only host can list room tickets")
     tickets = await db.tickets.find({"room_id": room_id}).to_list(500)
-    return [Ticket(**t) for t in tickets]
+
+    # Some older tickets may not have user_name populated; enrich them on the fly
+    enriched: List[Ticket] = []
+    for t in tickets:
+        if not t.get("user_name") and t.get("user_id"):
+            try:
+                user = await db.users.find_one({"id": t["user_id"]})
+                if user:
+                    t["user_name"] = user.get("name", "")
+            except Exception as e:
+                logger.error(f"Failed to enrich ticket user_name for ticket {t.get('id')}: {e}")
+        enriched.append(Ticket(**t))
+
+    return enriched
 
 
 @api_router.put("/rooms/{room_id}/admin-ticket", response_model=MessageResponse)

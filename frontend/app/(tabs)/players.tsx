@@ -579,7 +579,7 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     padding: 16,
-    paddingBottom: 100,
+    paddingBottom: 180,
   },
   playerCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.1)',

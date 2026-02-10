@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -40,12 +40,56 @@ const CATEGORY_OPTIONS: { [key: string]: PrizeOption[] } = {
         { id: 'e3', name: 'Quickly 7', selected: false, amount: '' },
         { id: 'e4', name: 'Lucky 9', selected: false, amount: '' },
     ],
+    extra: [
+        { id: 'x1', name: 'First 3 Numbers', selected: false, amount: '' },
+        { id: 'x2', name: 'Any 2 Lines', selected: false, amount: '' },
+        { id: 'x3', name: 'Center Box', selected: false, amount: '' },
+        { id: 'x4', name: 'X Pattern', selected: false, amount: '' },
+        { id: 'x5', name: 'Pyramid', selected: false, amount: '' },
+    ],
+    letters: [
+        { id: 'l1', name: 'L Shape', selected: false, amount: '' },
+        { id: 'l2', name: 'T Shape', selected: false, amount: '' },
+        { id: 'l3', name: 'H Shape', selected: false, amount: '' },
+        { id: 'l4', name: 'Z Shape', selected: false, amount: '' },
+    ],
+    math: [
+        { id: 'm1', name: 'Even Numbers Complete', selected: false, amount: '' },
+        { id: 'm2', name: 'Odd Numbers Complete', selected: false, amount: '' },
+        { id: 'm3', name: 'Sum Equals 50', selected: false, amount: '' },
+        { id: 'm4', name: 'Multiples of 5', selected: false, amount: '' },
+        { id: 'm5', name: 'Prime Numbers', selected: false, amount: '' },
+    ],
+    minmax: [
+        { id: 'n1', name: 'Smallest Number', selected: false, amount: '' },
+        { id: 'n2', name: 'Largest Number', selected: false, amount: '' },
+        { id: 'n3', name: 'Range 30-60', selected: false, amount: '' },
+        { id: 'n4', name: 'Blood Pressure (120/80)', selected: false, amount: '' },
+    ],
+    starend: [
+        { id: 's1', name: 'Starts with 1 (10-19)', selected: false, amount: '' },
+        { id: 's2', name: 'Starts with 2 (20-29)', selected: false, amount: '' },
+        { id: 's3', name: 'Starts with 3 (30-39)', selected: false, amount: '' },
+        { id: 's4', name: 'Ends with 0', selected: false, amount: '' },
+        { id: 's5', name: 'Ends with 5', selected: false, amount: '' },
+    ],
+    pairs: [
+        { id: 'p1', name: 'Any Pair', selected: false, amount: '' },
+        { id: 'p2', name: 'Same Ending Pair', selected: false, amount: '' },
+        { id: 'p3', name: 'Couple Pair (1&9, 2&8)', selected: false, amount: '' },
+    ],
     rowline: [
         { id: 'r1', name: 'Top Line', selected: false, amount: '' },
         { id: 'r2', name: 'Middle Line', selected: false, amount: '' },
         { id: 'r3', name: 'Bottom Line', selected: false, amount: '' },
         { id: 'r4', name: 'Any Line', selected: false, amount: '' },
         { id: 'r5', name: '2 Lines', selected: false, amount: '' },
+    ],
+    special: [
+        { id: 't1', name: 'First Number Called', selected: false, amount: '' },
+        { id: 't2', name: 'Last Number Called', selected: false, amount: '' },
+        { id: 't3', name: 'Lucky 7', selected: false, amount: '' },
+        { id: 't4', name: 'Double Numbers (11,22,33...)', selected: false, amount: '' },
     ],
     house: [
         { id: 'h1', name: 'Full House', selected: false, amount: '' },
@@ -62,6 +106,46 @@ export default function PrizeCategoryDetailScreen() {
     const [showAmountModal, setShowAmountModal] = useState(false);
     const [selectedOption, setSelectedOption] = useState<PrizeOption | null>(null);
     const [tempAmount, setTempAmount] = useState('');
+
+    // Load previously saved selections
+    useEffect(() => {
+        loadSavedSelections();
+    }, []);
+
+    const loadSavedSelections = async () => {
+        try {
+            const prizesData = await AsyncStorage.getItem('selected_prizes');
+            if (prizesData) {
+                const allPrizes = JSON.parse(prizesData);
+
+                // Get prizes for this category
+                const categoryPrizes = allPrizes.filter((p: any) => {
+                    // Check if prize belongs to this category
+                    const prizePrefix = p.id.charAt(0);
+                    const categoryPrefix = params.categoryId.charAt(0);
+                    return prizePrefix === categoryPrefix;
+                });
+
+                // Merge with default options
+                const defaultOptions = CATEGORY_OPTIONS[params.categoryId] || [];
+                const mergedOptions = defaultOptions.map(opt => {
+                    const saved = categoryPrizes.find((p: any) => p.id === opt.id);
+                    if (saved) {
+                        return {
+                            ...opt,
+                            selected: true,
+                            amount: saved.amount
+                        };
+                    }
+                    return opt;
+                });
+
+                setOptions(mergedOptions);
+            }
+        } catch (error) {
+            console.error('Error loading saved selections:', error);
+        }
+    };
 
     const toggleOption = (option: PrizeOption) => {
         if (!option.selected) {

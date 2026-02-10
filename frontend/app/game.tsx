@@ -21,7 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Speech from 'expo-speech';
 import { useGameState } from '../contexts/GameStateContext';
 import { generateTicketsForPlayers, Ticket } from '../utils/ticketGenerator';
-import { checkPrizeWin } from '../utils/prizeValidator';
+import { checkPrizeWin, checkCustomPattern } from '../utils/prizeValidator';
 import { PrizeClaim, SelectedPrize } from '../types/claim-types';
 
 const { width } = Dimensions.get('window');
@@ -38,7 +38,7 @@ export default function GameScreen() {
   const [game, setGame] = useState<{ players: Player[]; tickets: Ticket[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedPrizes, setSelectedPrizes] = useState<SelectedPrize[]>([]);
-  const intervalRef = useRef<number | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     initializeGameOffline();
@@ -50,15 +50,23 @@ export default function GameScreen() {
   // Sync local state with GameState
   useEffect(() => {
     if (gameState.isAutoCalling && !intervalRef.current) {
-      // Start auto calling
+      // Start auto calling - the first number is already called in toggleAutoMode
       intervalRef.current = setInterval(() => {
         callNumber();
-      }, AUTO_SPEED_SECONDS * 1000);
+      }, AUTO_SPEED_SECONDS * 1000) as unknown as NodeJS.Timeout;
     } else if (!gameState.isAutoCalling && intervalRef.current) {
       // Stop auto calling
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
+
+    // Cleanup on unmount
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
   }, [gameState.isAutoCalling, callNumber]);
 
   // Speak the number whenever it changes (offline TTS)
@@ -132,12 +140,16 @@ export default function GameScreen() {
 
   const toggleAutoMode = async () => {
     if (gameState.isAutoCalling) {
-      // Stop
+      // Stop auto mode
       await setAutoCalling(false);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
     } else {
-      // Start
+      // Start auto mode - call first number immediately
+      await handleCallNumber();
       await setAutoCalling(true);
-      await handleCallNumber(); // Call first number immediately
     }
   };
 
@@ -238,7 +250,14 @@ export default function GameScreen() {
 
       // Check all tickets for this prize
       for (const ticket of game.tickets) {
-        const wins = checkPrizeWin(ticket, prize.id, gameState.calledNumbers);
+        let wins = false;
+
+        // Check if it's a custom pattern
+        if (prize.id.startsWith('custom_') && (prize as any).pattern) {
+          wins = checkCustomPattern(ticket.grid, (prize as any).pattern, gameState.calledNumbers);
+        } else {
+          wins = checkPrizeWin(ticket, prize.id, gameState.calledNumbers);
+        }
 
         if (wins) {
           // Found a winner! Create claim automatically
